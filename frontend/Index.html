@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nokia | SharePoint Knowledge Assistant</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app-container">
+    <!-- Top Header -->
+    <header class="top-header">
+        <div class="header-left">
+            <span class="nokia-logo">NOKIA</span>
+            <span class="separator">●</span>
+            <span class="title">SharePoint Knowledge Assistant</span>
+            <span class="badge">Azure OpenAI + Chroma</span>
+        </div>
+        <div class="header-right">
+            <span class="status-badge"><span class="dot"></span> Chroma DB Connected</span>
+            <div class="avatar">JD</div>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <i class="fa-regular fa-folder"></i> SOURCES
+                    <span class="count" id="sourceCount">3</span>
+                </div>
+                <div class="sources-list" id="sourcesList">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-header"><i class="fa-regular fa-clock"></i> RECENT</div>
+                <div class="recent-list" id="recentList"></div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="vector-box">
+                    <i class="fa-solid fa-database" style="color:#123A8A"></i>
+                    <div>
+                        <div style="font-weight:700;font-size:12px">Vector DB: Chroma</div>
+                        <div style="font-size:11px;color:#64748b" id="docStats">3 files indexed in Chroma</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Chat Area -->
+        <section class="chat-wrapper">
+            <div class="chat-container" id="chatContainer">
+                <div class="bot-message">
+                    <div class="bot-label"><i class="fa-solid fa-robot"></i> BOT</div>
+                    <div>Hello! Ask me anything about your documents. I search across <b>documents/</b> via Chroma vector DB and cite sources.</div>
+                </div>
+            </div>
+
+            <div class="thinking hidden" id="thinking">
+                <span class="dot-anim"></span> Searching knowledge base via Chroma...
+            </div>
+
+            <div class="input-area">
+                <div class="input-box">
+                    <input type="text" id="questionInput" placeholder="Ask a question... e.g. What is in NADCM_Guide.pdf?" autocomplete="off">
+                    <button class="clear-btn" onclick="clearInput()"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <button class="send-btn" onclick="sendMessage()">Send <i class="fa-solid fa-paper-plane"></i></button>
+                <button class="trash-btn" onclick="clearChat()"><i class="fa-regular fa-trash-can"></i></button>
+            </div>
+
+            <div class="try-row">
+                Try: <span onclick="setInput('leave policy')">leave policy</span> <span onclick="setInput('Summarize NADCM Guide')">Summarize NADCM Guide</span> <span onclick="setInput('key points')">key points</span>
+            </div>
+
+            <footer class="app-footer">© 2026 Nokia | Powered by Azure OpenAI | backend/main.py ↔ vector_db/Chroma</footer>
+        </section>
+    </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
