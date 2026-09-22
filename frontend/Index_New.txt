@@ -30,8 +30,7 @@
                 <div class="nav-card active" onclick="setPrompt('hotline')">
                     <div class="nav-icon hotline"><i class="fa-solid fa-phone-volume"></i></div>
                     <div class="nav-info">
-                        <div class="nav-title">FOPS Site Check</div>
-                        <div class="nav-desc">Cabling, dust, power, LED status, basic checks</div>
+                        
                     </div>
                 </div>
                 <div class="checklist">
@@ -44,14 +43,11 @@
                 <div class="nav-card" onclick="setPrompt('troubleshoot')">
                     <div class="nav-icon troubleshoot"><i class="fa-solid fa-microchip"></i></div>
                     <div class="nav-info">
-                        <div class="nav-title">TSH Steps</div>
-                        <div class="nav-desc">DIMM replacement, server replacement, board swap</div>
+                        
                     </div>
                 </div>
                 <div class="steps-list">
-                    <div class="step"><span>1</span> DIMM Replacement</div>
-                    <div class="step"><span>2</span> Server Replacement</div>
-                    <div class="step"><span>3</span> HW Diagnostics</div>
+                   
                 </div>
             </div>
 
@@ -61,7 +57,7 @@
                     <div class="nav-icon ran"><i class="fa-solid fa-signal"></i></div>
                     <div class="nav-info">
                         <div class="nav-title">RAN Support</div>
-                        <div class="nav-desc">Baseband, RRH, alarm analysis, cell down</div>
+                        
                     </div>
                 </div>
             </div>
@@ -71,8 +67,7 @@
                 <div class="nav-card" onclick="setPrompt('tc30')">
                     <div class="nav-icon tc30"><i class="fa-solid fa-code"></i></div>
                     <div class="nav-info">
-                        <div class="nav-title">TC30 Documentation</div>
-                        <div class="nav-desc">Test cases, procedures, logs, HWM & ATP docs</div>
+                       
                     </div>
                 </div>
                 <div class="doc-list">
