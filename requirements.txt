@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-langchain
-chromadb
-openai
-pdfplumber
-python-docx
