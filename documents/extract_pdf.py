@@ -1,7 +1,7 @@
 import pdfplumber
 
 
-PDF_PATH = "HWM.pdf"
+PDF_PATH = "FID.pdf"
 
 
 def extract_text():

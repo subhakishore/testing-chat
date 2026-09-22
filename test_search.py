@@ -16,7 +16,7 @@ vector_db = Chroma(
 
 
 # Ask a question
-query = "volumes and partitions?"
+query = "No connection"
 
 
 # Search relevant chunks
