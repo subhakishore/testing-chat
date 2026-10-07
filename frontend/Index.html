@@ -6,112 +6,92 @@
     <title>NOKIA - TMO AI Support System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="Style.css">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="app-container">
     <header class="top-header">
         <div class="header-left">
-            <span class="nokia-logo">
-				<img src="/nokia.png" alt="NOKIA Logo" />
-</span>
+            <span class="nokia-logo"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Nokia_logo_%282023%29.svg/2560px-Nokia_logo_%282023%29.svg.png" alt="NOKIA" style="height:24px; filter:brightness(0) invert(1)" /></span>
             <span class="title">TMO AI Support System</span>
         </div>
-        <div class="header-right">
-            <div class="avatar">AB</div>
-        </div>
+        <div class="header-right"><div class="avatar">AB</div></div>
     </header>
 
     <div class="main-layout">
-        <!-- LEFT PAN - NEW DESIGN WITHOUT SOURCES -->
         <aside class="sidebar">
             <div class="sidebar-section">
                 <div class="section-header"><i class="fa-solid fa-headset"></i> AGENT HOT LINE</div>
                 <div class="nav-card active" onclick="setPrompt('hotline')">
                       <div class="nav-icon hotline"><i class="fa-solid fa-phone-volume"></i></div>
-                    <div class="nav-info">
-                        <div class="nav-title">Helpline</div>
-                    </div>
+                    <div class="nav-info"><div class="nav-title">Helpline</div></div>
                 </div>
             </div>
-
             <div class="sidebar-section">
                 <div class="section-header"><i class="fa-solid fa-screwdriver-wrench"></i> AGENT TROUBLESHOOTING</div>
                 <div class="nav-card" onclick="setPrompt('troubleshoot')">
                     <div class="nav-icon troubleshoot"><i class="fa-solid fas fa-wrench"></i></div>
-                    <div class="nav-info">
-                        <div class="nav-title"> TSH Support</div>
-                    </div>
+                    <div class="nav-info"><div class="nav-title"> TSH Support</div></div>
                 </div>
             </div>
-
             <div class="sidebar-section">
                 <div class="section-header"><i class="fa-solid fa-tower-broadcast"></i> RAN</div>
                 <div class="nav-card" onclick="setPrompt('ran')">
                     <div class="nav-icon ran"><i class="fa-solid fa-signal"></i></div>
-                    <div class="nav-info">
-                        <div class="nav-title">RAN Support</div>
-                    </div>
+                    <div class="nav-info"><div class="nav-title">RAN Support</div></div>
                 </div>
             </div>
-
             <div class="sidebar-section">
                 <div class="section-header"><i class="fa-solid fa-file-code"></i> TC30</div>
                 <div class="nav-card" onclick="setPrompt('tc30')">
                     <div class="nav-icon tc30"><i class="fa-solid fa-cloud" style="color:blue;"></i></div>
-                    <div class="nav-info">
-                        <div class="nav-title"> TC30 Support</div>
-                    </div>
+                    <div class="nav-info"><div class="nav-title"> TC30 Support</div></div>
+                </div>
+            </div>
+            <div class="sidebar-section">
+                <div class="nav-card" onclick="setPrompt('Comparison')">
+                    <div class="nav-info"><div class="nav-title"> Pre/Post-Check Comparison</div></div>
+                </div>
+            </div>
+            <div class="sidebar-section">
+                <div class="nav-card" onclick="setPrompt('Audit')">
+                    <div class="nav-info"><div class="nav-title"> Audit Analysis</div></div>
                 </div>
             </div>
 
-            <!-- RECENT SEARCHES SECTION -->
             <div class="sidebar-section recent-section">
                 <div class="section-header recent-header">
                     <span><i class="fa-solid fa-clock-rotate-left"></i> RECENT SEARCHES</span>
-                    <button class="clear-history-btn" onclick="clearRecentSearches()" title="Clear history">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
+                    <button class="clear-history-btn" onclick="clearRecentSearches()" title="Clear history"><i class="fa-solid fa-trash"></i></button>
                 </div>
-                <div class="recent-searches-list" id="recentSearchesList">
-                    <!-- JS will inject items here -->
-                    <div class="empty-recent">No recent searches</div>
-                </div>
+                <div class="recent-searches-list" id="recentSearchesList"><div class="empty-recent">No recent searches</div></div>
             </div>
-           
         </aside>
 
-        <!-- RIGHT CHAT AREA - TTSS -->
         <section class="chat-wrapper">
-            
-<div class="chat-container" id="chatContainer">
-    <!-- This static div will be REMOVED on click -->
-    <div class="ttss-message" id="defaultWelcome">
-        <div class="ttss-label"><i class="fa-solid fa-robot"></i> TASS - TMO AI SUPPORT SYSTEM</div>
-        <div>Hello! I am <b>TASS (TMO AI Support System)</b>. How can I guide you?<br><br>Ask your question and I will provide downloadable steps.</div>
-        <button class="download-btn" onclick="downloadText(this)"><i class="fa-solid fa-download"></i> Download as.txt</button>
-    </div>
-
-    <!-- This will be shown after click -->
-    <div class="ttss-message hidden" id="selectedTopicPanel" style="display:none"></div>
-
-    <!-- Chat messages go here -->
-    <div id="chatMessages"></div>
-</div>
+            <div class="chat-container" id="chatContainer">
+                <div class="ttss-message" id="defaultWelcome">
+                    <div class="ttss-label"><i class="fa-solid fa-robot"></i> TASS - TMO AI SUPPORT SYSTEM</div>
+                    <div>Hello! I am <b>TASS (TMO AI Support System)</b>. How can I guide you?<br><br>Ask your question and I will provide downloadable steps.</div>
+                    <button class="download-btn" onclick="downloadAsHtml(this)"><i class="fa-solid fa-download"></i> Download as.html</button>
+                </div>
+                <div class="ttss-message hidden" id="selectedTopicPanel" style="display:none"></div>
+                <div id="chatMessages"></div>
+            </div>
             <div class="thinking hidden" id="thinking"><span class="dot-anim"></span> TASS searching knowledge base via Chroma...</div>
 
-            <div class="input-area">
+            <div class="input-area" id="inputArea">
                 <div class="input-box">
-                    <input type="text" id="questionInput" placeholder="Ask TASS... e.g. FOPS basic checks for DIMM failure?" autocomplete="off" onkeydown="if(event.key==='Enter') sendMessage()">
+                    <input type="text" id="questionInput" placeholder="Ask TASS... e.g. FOPS basic checks for DIMM failure?" autocomplete="off">
                     <button class="clear-btn" onclick="clearInput()"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <button class="send-btn" onclick="sendMessage()">Send <i class="fa-solid fa-paper-plane"></i></button>
                 <button class="trash-btn" onclick="clearChat()"><i class="fa-regular fa-trash-can"></i></button>
             </div>
 
-            <div class="try-row">
+            <div class="try-row" id="tryRow">
                 Try: <span onclick="setInput('Agent Hot line - basic checks')">Hotline basic checks</span> <span onclick="setInput('DIMM replacement steps')">DIMM replacement</span> <span onclick="setInput('RAN alarm cell down')">RAN alarm</span> <span onclick="setInput('TC30 HWM installation steps')">TC30 HWM</span>
             </div>
-
             <footer class="app-footer">© 2026 Nokia | TASS Powered by Nokia </footer>
         </section>
     </div>

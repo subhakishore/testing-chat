@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pre/Post Exact Comparison - TASS</title>
+<style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Consolas', 'Courier New', monospace; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
+    .header { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; border: 1px solid #e2e8f0; }
+    .header h1 { margin: 0 0 8px 0; font-size: 18px; color: #0f172a; }
+    .header p { margin: 0; color: #64748b; font-size: 13px; }
+    .stats { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+    .badge { padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 12px; border: 1px solid; }
+    .b-added { background: #dcfce7; color: #166534; border-color: #86efac; }
+    .b-removed { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+    .b-changed { background: #fef9c3; color: #854d0e; border-color: #fde047; }
+    .b-unchanged { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    th { background: #0f172a; color: white; padding: 12px 10px; text-align: left; font-size: 12px; position: sticky; top: 0; z-index: 10; }
+    td { border-bottom: 1px solid #f1f5f9; padding: 0; vertical-align: top; }
+    td.ln { width: 70px; text-align: center; background: #f8fafc; color: #94a3b8; font-size: 11px; padding: 8px; }
+    td.st { width: 110px; text-align: center; font-weight: bold; font-size: 11px; padding: 8px; }
+    td pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.6; font-family: 'Consolas', monospace; }
+    .legend { margin-top: 20px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>🔍 TASS - PRE/POST-CHECK EXACT COMPARISON</h1>
+    <p>Files: <b>pre.txt</b> vs <b>post.txt</b> | Keeps alpha, numeric, special chars exact including [root@NAMELG03 ~]#</p>
+    <div class="stats">
+        <span class="badge b-added">ADDED: 0</span>
+        <span class="badge b-removed">REMOVED: 0</span>
+        <span class="badge b-changed">CHANGED: 1</span>
+        <span class="badge b-unchanged">UNCHANGED: 12</span>
+        <span class="badge b-unchanged">TOTAL DIFF: 1</span>
+    </div>
+</div>
+<table>
+<thead><tr><th>Line</th><th>Status</th><th>Pre-Check File (Exact from pre.txt)</th><th>Post-Check File (Exact from post.txt)</th></tr></thead>
+<tbody><tr style="background:#ffffff"><td class="ln">1</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>NAME=&quot;Red Hat Enterprise Linux&quot;</pre></td><td><pre>NAME=&quot;Red Hat Enterprise Linux&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">2</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>VERSION=&quot;9.4 (Plow)&quot;</pre></td><td><pre>VERSION=&quot;9.4 (Plow)&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">3</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>ID=&quot;rhel&quot;</pre></td><td><pre>ID=&quot;rhel&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">4</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>ID_LIKE=&quot;fedora&quot;</pre></td><td><pre>ID_LIKE=&quot;fedora&quot;</pre></td></tr><tr style="background:#fff8c5"><td class="ln">5</td><td class="st" style="background:#fff8c5;color:#854d0e">CHANGED</td><td><pre>VERSION_ID=&quot;9.4&quot;</pre></td><td><pre>VERSION_ID=&quot;9.5&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">6</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>PLATFORM_ID=&quot;platform:el9&quot;</pre></td><td><pre>PLATFORM_ID=&quot;platform:el9&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">7</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>PRETTY_NAME=&quot;Red Hat Enterprise Linux 9.4 (Plow)&quot;</pre></td><td><pre>PRETTY_NAME=&quot;Red Hat Enterprise Linux 9.4 (Plow)&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">8</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>ANSI_COLOR=&quot;0;31&quot;</pre></td><td><pre>ANSI_COLOR=&quot;0;31&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">9</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>LOGO=&quot;fedora-logo-icon&quot;</pre></td><td><pre>LOGO=&quot;fedora-logo-icon&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">10</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>CPE_NAME=&quot;cpe:/o:redhat:enterprise_linux:9::baseos&quot;</pre></td><td><pre>CPE_NAME=&quot;cpe:/o:redhat:enterprise_linux:9::baseos&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">11</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>HOME_URL=&quot;https://www.redhat.com/&quot;</pre></td><td><pre>HOME_URL=&quot;https://www.redhat.com/&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">12</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>DOCUMENTATION_URL=&quot;https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9&quot;</pre></td><td><pre>DOCUMENTATION_URL=&quot;https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9&quot;</pre></td></tr><tr style="background:#ffffff"><td class="ln">13</td><td class="st" style="background:#f1f5f9">UNCHANGED</td><td><pre>BUG_REPORT_URL=&quot;https://bugzilla.redhat.com/&quot;</pre></td><td><pre>BUG_REPORT_URL=&quot;https://bugzilla.redhat.com/&quot;</pre></td></tr></tbody>
+</table>
+<div class="legend">
+<b>Legend:</b><br>
+🟩 <span style="background:#e6ffec;padding:2px 8px;border-radius:4px">ADDED</span> = Line exists only in Post file (green)<br>
+🟥 <span style="background:#ffebe9;padding:2px 8px;border-radius:4px">REMOVED</span> = Line exists only in Pre file (red)<br>
+🟨 <span style="background:#fff8c5;padding:2px 8px;border-radius:4px">CHANGED</span> = Line modified between files (yellow)<br>
+⬜ UNCHANGED = Same in both files (white)<br>
+<b>Note:</b> All alpha, numeric, special characters like $ % ^ & * ( ) [ ] { } @ # are preserved 100% exact as in your txt files. No JSON conversion.
+</div>
+</body>
+</html>

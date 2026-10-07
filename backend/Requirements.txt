@@ -1,0 +1,32 @@
+# TASS Chatbot Backend - Python 3.13 Compatible - No strict pins
+fastapi
+uvicorn[standard]
+pydantic
+
+# LangChain Stack - latest compatible
+langchain
+langchain-core
+langchain-ollama
+langchain-huggingface
+langchain-chroma
+langchain-text-splitters
+
+# Vector DB & Embeddings - latest will support 3.13
+chromadb
+sentence-transformers
+huggingface-hub
+torch
+transformers
+
+# Document Processing
+PyMuPDF
+python-docx
+openpyxl
+
+# Reranking / Fuzzy Search
+rapidfuzz
+
+# Utils
+python-multipart
+python-dotenv
+numpy
