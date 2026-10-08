@@ -893,17 +893,60 @@ function evaluateHwParam(param, valueStr, hostName) {
   if (param === "CEPH list no of OSD's") {
     const isEmpty = !val.trim();
     const hasNOK = lower.includes("nok");
-    const osdMatch = val.match(/osd[:\s]*([0-9]+)/i);
-    const osdsUpMatch = val.match(/([0-9]+)\s*up/i);
-    const osdsInMatch = val.match(/([0-9]+)\s*in/i);
-    const totalOsd = osdMatch ? parseInt(osdMatch[1]) : null;
-    const upOsd = osdsUpMatch ? parseInt(osdsUpMatch[1]) : null;
+    const hasNoData = lower.includes("no data");
     
-    if (isEmpty) return { ticket: true, reason: "CEPH OSD EMPTY" };
+    // Parse total OSD count: osd: 45
+    const osdMatch = val.match(/osd[:\s]*([0-9]+)/i);
+    const totalOsd = osdMatch ? parseInt(osdMatch[1]) : null;
+    
+    // Parse up count: 45 up, 45 down
+    const upMatch = val.match(/([0-9]+)\s*up/i);
+    const downMatch = val.match(/([0-9]+)\s*down/i);
+    const upCount = upMatch ? parseInt(upMatch[1]) : null;
+    const downCount = downMatch ? parseInt(downMatch[1]) : null;
+    
+    // Logic: If found NOK and osd count should be 45 and all osd should be up, if not found need to raise
+    if (isEmpty) return { ticket: true, reason: "CEPH OSD EMPTY - No value" };
+    if (hasNoData) return { ticket: true, reason: `CEPH OSD No Data: ${val}` };
     if (hasNOK) return { ticket: true, reason: `CEPH OSD NOK: ${val}` };
-    if (totalOsd !== null && totalOsd < 45) return { ticket: true, reason: `OSD count ${totalOsd} <45` };
-    if (upOsd !== null && totalOsd !== null && upOsd < totalOsd) return { ticket: true, reason: `OSD not all up: ${upOsd}/${totalOsd}` };
-    if (totalOsd !== null && totalOsd !== 45) return { ticket: true, reason: `OSD count ${totalOsd} !=45` };
+    
+    // Check if osd count is 45
+    if (totalOsd !== null && totalOsd !== 45) {
+      return { ticket: true, reason: `OSD count ${totalOsd} != 45 (expected 45)` };
+    }
+    if (totalOsd !== null && totalOsd < 45) {
+      return { ticket: true, reason: `OSD count ${totalOsd} < 45` };
+    }
+    
+    // Check if all osd should be up - if down > 0, raise ticket
+    if (downCount !== null && downCount > 0) {
+      return { ticket: true, reason: `OSD DOWN detected: ${downCount} down - All should be up. Value: ${val}` };
+    }
+    
+    // If we have up count, it should be 45
+    if (upCount !== null && upCount !== 45) {
+      return { ticket: true, reason: `OSD up count ${upCount} != 45 - All should be up. Value: ${val}` };
+    }
+    
+    // If string contains "down" at all, even if it says OK, it's down - should raise
+    if (lower.includes(" down") || lower.includes("down (")) {
+      return { ticket: true, reason: `OSD has DOWN state: ${val} - All should be up` };
+    }
+    
+    // If up count < total, not all up
+    if (upCount !== null && totalOsd !== null && upCount < totalOsd) {
+      return { ticket: true, reason: `OSD not all up: ${upCount}/${totalOsd} up. Value: ${val}` };
+    }
+    
+    // Valid only if 45 osds, 45 up, 45 in, and HEALTH_OK/OK
+    if (totalOsd === 45 && upCount === 45 && downCount === null) {
+      return { ticket: false, reason: "OSD OK - 45/45 up" };
+    }
+    
+    // If no clear up count but total is 45 and no down, check for OK
+    if (totalOsd === 45 && !lower.includes("down") && (lower.includes("ok") || lower.includes("up"))) {
+      return { ticket: false, reason: "OSD OK" };
+    }
   }
   
   const storageRaidParams = [

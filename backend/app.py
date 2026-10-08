@@ -664,21 +664,41 @@ def evaluate_hw_param(param, value_str, host_name):
     if param == "CEPH list no of OSD's":
         is_empty = not val.strip()
         has_nok = "nok" in lower
+        has_no_data = "no data" in lower
+        
         m_total = re.search(r"osd[:\s]*([0-9]+)", val, re.I)
         m_up = re.search(r"([0-9]+)\s*up", val, re.I)
+        m_down = re.search(r"([0-9]+)\s*down", val, re.I)
+        
         total_osd = int(m_total.group(1)) if m_total else None
         up_osd = int(m_up.group(1)) if m_up else None
+        down_osd = int(m_down.group(1)) if m_down else None
         
+        # Logic: If found NOK and osd count should be 45 and all osd should be up, if not found need to raise
         if is_empty:
-            return {"ticket": True, "reason": "CEPH OSD EMPTY"}
+            return {"ticket": True, "reason": "CEPH OSD EMPTY - No value"}
+        if has_no_data:
+            return {"ticket": True, "reason": f"CEPH OSD No Data: {val}"}
         if has_nok:
             return {"ticket": True, "reason": f"CEPH OSD NOK: {val}"}
-        if total_osd is not None and total_osd < 45:
-            return {"ticket": True, "reason": f"OSD count {total_osd} <45"}
-        if up_osd is not None and total_osd is not None and up_osd < total_osd:
-            return {"ticket": True, "reason": f"OSD not all up: {up_osd}/{total_osd}"}
+        
         if total_osd is not None and total_osd != 45:
-            return {"ticket": True, "reason": f"OSD count {total_osd} !=45"}
+            return {"ticket": True, "reason": f"OSD count {total_osd} != 45 (expected 45)"}
+        
+        if down_osd is not None and down_osd > 0:
+            return {"ticket": True, "reason": f"OSD DOWN detected: {down_osd} down - All should be up. Value: {val}"}
+        
+        if up_osd is not None and up_osd != 45:
+            return {"ticket": True, "reason": f"OSD up count {up_osd} != 45 - All should be up. Value: {val}"}
+        
+        if " down" in lower or "down (" in lower:
+            return {"ticket": True, "reason": f"OSD has DOWN state: {val} - All should be up"}
+        
+        if up_osd is not None and total_osd is not None and up_osd < total_osd:
+            return {"ticket": True, "reason": f"OSD not all up: {up_osd}/{total_osd} up. Value: {val}"}
+        
+        if total_osd == 45 and up_osd == 45 and down_osd is None:
+            return {"ticket": False, "reason": "OSD OK - 45/45 up"}
     
     storage_raid_params = [
         "Storage RAID Controller Model Number",
