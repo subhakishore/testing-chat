@@ -848,7 +848,83 @@ function evaluateHwParam(param, valueStr, hostName) {
       if (volt > CMOS_THRESHOLD) return { ticket: true, reason: `CMOS ${volt}V > ${CMOS_THRESHOLD}V` };
     }
   }
-  const lessThanMatch = logicLower.match(/less than\s*([0-9]+)/);
+
+  // ===== STORAGE ALL COMMANDS - SEPARATE LOGIC =====
+  const storageNvmeParams = [
+    "Storage NVME Hard Disk Labels",
+    "Storage NVME Hard Disk PCI Slot",
+    "Storage NVME Hard Disk Size",
+    "Storage NVME Hard Disk Health",
+    "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+    "Storage NVME Hard Disk Serial Number",
+    "Storage NVME Hard Disk Model Number",
+    "Storage NVME Hard Disk Firmware Version",
+    "Bad Block Count"
+  ];
+  
+  if (storageNvmeParams.includes(param)) {
+    const isEmpty = !val.trim();
+    const hasNoData = lower.includes("no data");
+    const hasNOK = lower.includes("nok");
+    if (isEmpty) return { ticket: true, reason: `${param} EMPTY - No value` };
+    if (hasNoData) return { ticket: true, reason: `${param} No Data: ${val}` };
+    if (hasNOK) return { ticket: true, reason: `${param} NOK: ${val}` };
+    // Also check generic NOK/No Data via logic
+    if (logicLower.includes("nok or no data") && (hasNOK || hasNoData)) {
+      return { ticket: true, reason: `${hasNOK?'NOK':''} ${hasNoData?'No Data':''}`.trim() };
+    }
+  }
+  
+  if (param === "CEPH Health Detail") {
+    const isEmpty = !val.trim();
+    const hasNOK = lower.includes("nok");
+    const hasHealthErr = lower.includes("health_err") || lower.includes("health_warn") || (lower.includes("health") && !lower.includes("health_ok"));
+    // Valid is HEALTH_OK and OK
+    if (isEmpty) return { ticket: true, reason: "CEPH Health EMPTY" };
+    if (hasNOK) return { ticket: true, reason: `CEPH NOK: ${val}` };
+    if (!lower.includes("health_ok") && !lower.includes("ok")) {
+      return { ticket: true, reason: `CEPH Health not OK: ${val}` };
+    }
+    if (hasHealthErr && !lower.includes("health_ok")) {
+      return { ticket: true, reason: `CEPH HEALTH_ERR/WARN: ${val}` };
+    }
+  }
+  
+  if (param === "CEPH list no of OSD's") {
+    const isEmpty = !val.trim();
+    const hasNOK = lower.includes("nok");
+    const osdMatch = val.match(/osd[:\s]*([0-9]+)/i);
+    const osdsUpMatch = val.match(/([0-9]+)\s*up/i);
+    const osdsInMatch = val.match(/([0-9]+)\s*in/i);
+    const totalOsd = osdMatch ? parseInt(osdMatch[1]) : null;
+    const upOsd = osdsUpMatch ? parseInt(osdsUpMatch[1]) : null;
+    
+    if (isEmpty) return { ticket: true, reason: "CEPH OSD EMPTY" };
+    if (hasNOK) return { ticket: true, reason: `CEPH OSD NOK: ${val}` };
+    if (totalOsd !== null && totalOsd < 45) return { ticket: true, reason: `OSD count ${totalOsd} <45` };
+    if (upOsd !== null && totalOsd !== null && upOsd < totalOsd) return { ticket: true, reason: `OSD not all up: ${upOsd}/${totalOsd}` };
+    if (totalOsd !== null && totalOsd !== 45) return { ticket: true, reason: `OSD count ${totalOsd} !=45` };
+  }
+  
+  const storageRaidParams = [
+    "Storage RAID Controller Model Number",
+    "JBOD Model Number",
+    "JBOD Firmware Build Package"
+  ];
+  
+  if (storageRaidParams.includes(param)) {
+    const isEmpty = !val.trim();
+    const hasNOK = lower.includes("nok");
+    const hasNoData = lower.includes("no data");
+    if (isEmpty) return { ticket: true, reason: `${param} EMPTY` };
+    if (hasNOK) return { ticket: true, reason: `${param} NOK: ${val}` };
+    if (hasNoData) return { ticket: true, reason: `${param} No Data` };
+    // Logic says NOK only, but empty/No Data also should raise
+  }
+
+  // ===== END STORAGE LOGIC =====
+
+    const lessThanMatch = logicLower.match(/less than\s*([0-9]+)/);
   if (lessThanMatch) {
     const threshold = parseFloat(lessThanMatch[1]);
     const gb = extractGB(val);
@@ -1025,11 +1101,52 @@ function downloadAllViolationsExcel(){
   if(!allViolations.length){ alert('No violations found - all checks passed!'); return; }
   const header = ["Host", "Parameter", "Value", "Logic Rule", "Failure Reason", "Ticket Required", "Action", "Severity", "Date"];
   const rows = [header];
+  
+  // Storage params list for separate sheet
+  const storageParamsList = [
+    "Storage NVME Hard Disk Labels",
+    "Storage NVME Hard Disk PCI Slot",
+    "Storage NVME Hard Disk Size",
+    "Storage NVME Hard Disk Health",
+    "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+    "Storage NVME Hard Disk Serial Number",
+    "Storage NVME Hard Disk Model Number",
+    "Storage NVME Hard Disk Firmware Version",
+    "Bad Block Count",
+    "CEPH Health Detail",
+    "CEPH list no of OSD's",
+    "Storage RAID Controller Model Number",
+    "JBOD Model Number",
+    "JBOD Firmware Build Package",
+    "EID:SLT",
+    "DISK STATE",
+    "DISK CAPACITY",
+    "DISK SMART HEALTH STATUS",
+    "ERROR STATUS/TOTAL UNCORRECTED ERRORS",
+    "DISK SERIAL NUMBER",
+    "DISK MODEL NUMBER",
+    "DISK FIRMWARE VERSION",
+    "MEDIA WEAROUT INDICATOR",
+    "ERASE FAIL COUNT",
+    "OSD ID",
+    "OSD STATUS",
+    "FAST OSD ID",
+    "FAST OSD STATUS"
+  ];
+  
+  const storageRows = [header];
+  const computeRows = [header];
+  
   allViolations.forEach(v=>{
     let severity = "Medium";
     if(v.param.toLowerCase().includes("critical") || v.param.toLowerCase().includes("disk error") || v.param.toLowerCase().includes("cpu") || v.param.toLowerCase().includes("dimm")) severity="High";
     if(v.param.includes("CMOS")) severity="High";
-    rows.push([
+    if(v.param.includes("Storage") || v.param.includes("CEPH") || v.param.includes("JBOD") || v.param.includes("OSD") || v.param.includes("DISK") || v.param.includes("Bad Block") || storageParamsList.some(sp => v.param.toLowerCase().includes(sp.toLowerCase().split(' ')[0]))) {
+      // More precise check
+      const isStorage = storageParamsList.includes(v.param) || v.param.startsWith("Storage") || v.param.startsWith("CEPH") || v.param.startsWith("JBOD") || v.param.includes("OSD") || v.param.includes("DISK") && !v.param.includes("Compute/Master Hard Disk");
+      // Actually use includes check
+    }
+    const rowData = [
       v.host,
       v.param,
       v.value,
@@ -1039,9 +1156,41 @@ function downloadAllViolationsExcel(){
       v.action,
       severity,
       new Date().toLocaleString()
-    ]);
+    ];
+    rows.push(rowData);
+    
+    // Separate storage vs compute
+    const isStorageParam = storageParamsList.includes(v.param) || 
+                          v.param.toLowerCase().includes("storage nvme") ||
+                          v.param.toLowerCase().includes("ceph") ||
+                          v.param.toLowerCase().includes("jbod") ||
+                          v.param.toLowerCase().includes("bad block") ||
+                          v.param.toLowerCase().includes("raid controller") ||
+                          (v.param.includes("OSD") && !v.param.includes("CEPH list")) ||
+                          (v.param.includes("DISK") && !v.param.startsWith("Compute/Master"));
+    
+    // More accurate: check if param is in storage list OR starts with Storage/CEPH/JBOD/Bad Block OR is OSD/DISK but not Compute
+    const isStorage = storageParamsList.some(sp => v.param === sp) ||
+                      v.param.startsWith("Storage") ||
+                      v.param.startsWith("CEPH") ||
+                      v.param.startsWith("JBOD") ||
+                      v.param === "Bad Block Count" ||
+                      (v.param.includes("OSD") && v.param !== "CEPH list no of OSD's" ? true : v.param === "CEPH list no of OSD's") ||
+                      (["EID:SLT","DISK STATE","DISK CAPACITY","DISK SMART HEALTH STATUS","ERROR STATUS/TOTAL UNCORRECTED ERRORS","DISK SERIAL NUMBER","DISK MODEL NUMBER","DISK FIRMWARE VERSION","MEDIA WEAROUT INDICATOR","ERASE FAIL COUNT","OSD ID","OSD STATUS","FAST OSD ID","FAST OSD STATUS"].includes(v.param));
+    
+    // Simplified: if param contains Storage, CEPH, JBOD, Bad Block, OSD, or is in DISK list without Compute
+    const finalIsStorage = v.param.includes("Storage") || v.param.includes("CEPH") || v.param.includes("JBOD") || v.param.includes("Bad Block") || v.param.includes("OSD") || ["EID:SLT","DISK STATE","DISK CAPACITY","DISK SMART HEALTH STATUS","ERROR STATUS/TOTAL UNCORRECTED ERRORS","DISK SERIAL NUMBER","DISK MODEL NUMBER","DISK FIRMWARE VERSION","MEDIA WEAROUT INDICATOR","ERASE FAIL COUNT","OSD ID","OSD STATUS","FAST OSD ID","FAST OSD STATUS","DISK LABEL","RAID TYPE","RAID STATE"].includes(v.param);
+    
+    if(finalIsStorage){
+      storageRows.push(rowData);
+    } else {
+      computeRows.push(rowData);
+    }
   });
+  
   // Summary sheet data
+  const storageCount = storageRows.length - 1;
+  const computeCount = computeRows.length - 1;
   const summary = [
     ["HW Audit Automation - Full Logic Check"],
     ["File", auditFileName],
@@ -1049,6 +1198,8 @@ function downloadAllViolationsExcel(){
     ["Total Hosts", [...new Set(allViolations.map(v=>v.host))].length || 0],
     ["Total Rules Checked", HW_AUDIT_LOGIC.length],
     ["Total Violations", allViolations.length],
+    ["Compute/Master Violations", computeCount],
+    ["Storage Violations", storageCount],
     ["CMOS Threshold", CMOS_THRESHOLD + "V"],
     [""],
     ["Breakdown by Parameter"],
@@ -1061,6 +1212,15 @@ function downloadAllViolationsExcel(){
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws1, "All_Violations_Single_Sheet");
+  
+  // Storage issues in separate sheet - SAME EXCEL BOOK
+  const wsStorage = XLSX.utils.aoa_to_sheet(storageRows.length > 1 ? storageRows : [["Host","Parameter","Value","Logic Rule","Failure Reason","Ticket Required","Action","Severity","Date"],["No Storage Issues Found","-","-","-","All Storage Checks Passed","NO","-","-",""]]);
+  XLSX.utils.book_append_sheet(wb, wsStorage, "Storage_Issues");
+  
+  // Compute issues separate sheet
+  const wsCompute = XLSX.utils.aoa_to_sheet(computeRows.length > 1 ? computeRows : [["Host","Parameter","Value","Logic Rule","Failure Reason","Ticket Required","Action","Severity","Date"],["No Compute Issues","-","-","-","All Compute Checks Passed","NO","-","-",""]]);
+  XLSX.utils.book_append_sheet(wb, wsCompute, "Compute_Issues");
+  
   const ws2 = XLSX.utils.aoa_to_sheet(summary);
   XLSX.utils.book_append_sheet(wb, ws2, "Summary");
   if(auditRawData.length){
