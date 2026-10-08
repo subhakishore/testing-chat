@@ -801,10 +801,30 @@ function evaluateHwParam(param, valueStr, hostName) {
     }
   }
   if (param === "Compute/Master Hard Disk Health") {
-    if (!lower.includes("passed") && !lower.includes("ok")) return { ticket: true, reason: `Health not PASSED/OK` };
+    const isEmpty = !val.trim();
+    const hasNoData = lower.includes("no data");
+    const hasNOK = lower.includes("nok") || lower.includes("failed");
+    if (isEmpty || hasNoData || hasNOK || (!lower.includes("passed") && !lower.includes("ok"))) {
+      if(isEmpty) return { ticket: true, reason: "Health EMPTY - No value found" };
+      if(hasNoData) return { ticket: true, reason: `Health No Data: ${val}` };
+      if(hasNOK) return { ticket: true, reason: `Health NOK/Failed: ${val}` };
+      return { ticket: true, reason: `Health not PASSED/OK: ${val || 'EMPTY'}` };
+    }
   }
   if (param === "Compute/Master Hard Disk Errors / Total Uncorrected Errors") {
-    if (!lower.includes("no errors") && !lower.includes("ok")) return { ticket: true, reason: `Errors found` };
+    const isEmpty = !val.trim();
+    const hasNoData = lower.includes("no data");
+    const hasNOK = lower.includes("nok");
+    const hasFailed = lower.includes("failed");
+    const hasErrorsLogged = lower.includes("error") && !lower.includes("no errors");
+    const isValid = lower.includes("no errors logged") || (lower.includes("ok") && !hasNoData && !hasNOK);
+    
+    if (isEmpty) return { ticket: true, reason: "Errors EMPTY - No value found" };
+    if (hasNoData) return { ticket: true, reason: `Errors No Data: ${val}` };
+    if (hasNOK) return { ticket: true, reason: `Errors NOK: ${val}` };
+    if (hasFailed) return { ticket: true, reason: `Errors Failed: ${val}` };
+    if (hasErrorsLogged) return { ticket: true, reason: `Errors Logged found: ${val}` };
+    if (!isValid) return { ticket: true, reason: `Errors not 'No Errors Logged' or 'OK': ${val || 'EMPTY'}` };
   }
   if (param.toLowerCase().includes("media_wearout_indicator") || param === "MEDIA WEAROUT INDICATOR") {
     const vm = val.match(/VALUE\s*([0-9]+)/i);
@@ -906,7 +926,10 @@ function renderAuditAnalysis(){
     
     for(const host of hosts){
       const value = String(row[host.header] || "").trim();
-      if(!value) continue;
+      // For health checks, empty also needs ticket - don't skip, let evaluator handle it
+      // if(!value && param !== "Compute/Master Hard Disk Health" && !param.toLowerCase().includes("health") && !param.toLowerCase().includes("serial") && !param.toLowerCase().includes("model")) continue;
+      // Actually we want to check empty for all ticket-required params
+      
       const result = evaluateHwParam(param, value, host.name);
       if(result.ticket){
         const violation = {

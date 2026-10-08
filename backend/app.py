@@ -572,11 +572,37 @@ def evaluate_hw_param(param, value_str, host_name):
             if len(sizes)>=2 and sizes[0] != sizes[1]:
                 return {"ticket": True, "reason": f"sda/sdb mismatch {sizes[0]} vs {sizes[1]}"}
     if param == "Compute/Master Hard Disk Health":
-        if "passed" not in lower and "ok" not in lower:
-            return {"ticket": True, "reason": "Health not PASSED/OK"}
+        is_empty = not val.strip()
+        has_no_data = "no data" in lower
+        has_nok = "nok" in lower or "failed" in lower
+        if is_empty or has_no_data or has_nok or ("passed" not in lower and "ok" not in lower):
+            if is_empty:
+                return {"ticket": True, "reason": "Health EMPTY - No value found"}
+            if has_no_data:
+                return {"ticket": True, "reason": f"Health No Data: {val}"}
+            if has_nok:
+                return {"ticket": True, "reason": f"Health NOK/Failed: {val}"}
+            return {"ticket": True, "reason": f"Health not PASSED/OK: {val or 'EMPTY'}"}
     if param == "Compute/Master Hard Disk Errors / Total Uncorrected Errors":
-        if "no errors" not in lower and "ok" not in lower:
-            return {"ticket": True, "reason": "Errors found"}
+        is_empty = not val.strip()
+        has_no_data = "no data" in lower
+        has_nok = "nok" in lower
+        has_failed = "failed" in lower
+        has_errors_logged = "error" in lower and "no errors" not in lower
+        is_valid = "no errors logged" in lower or ("ok" in lower and not has_no_data and not has_nok)
+        
+        if is_empty:
+            return {"ticket": True, "reason": "Errors EMPTY - No value found"}
+        if has_no_data:
+            return {"ticket": True, "reason": f"Errors No Data: {val}"}
+        if has_nok:
+            return {"ticket": True, "reason": f"Errors NOK: {val}"}
+        if has_failed:
+            return {"ticket": True, "reason": f"Errors Failed: {val}"}
+        if has_errors_logged:
+            return {"ticket": True, "reason": f"Errors Logged found: {val}"}
+        if not is_valid:
+            return {"ticket": True, "reason": f"Errors not 'No Errors Logged' or 'OK': {val or 'EMPTY'}"}
     if "media_wearout_indicator" in param.lower() or param == "MEDIA WEAROUT INDICATOR":
         vm = re.search(r"VALUE\s*([0-9]+)", val, re.I)
         wm = re.search(r"WORST\s*([0-9]+)", val, re.I)
@@ -903,8 +929,10 @@ async def audit_analyze(file: UploadFile = File(...)):
             if col >= len(row):
                 continue
             value = str(row[col]).strip()
-            if not value:
-                continue
+            # Don't skip empty - empty means ticket for health and many other params
+            # if not value and "Health" not in param and "Serial" not in param and "Model" not in param:
+            #    continue
+
             result = evaluate_hw_param(param, value, host["name"])
             if result["ticket"]:
                 violations.append({
