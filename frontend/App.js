@@ -732,12 +732,218 @@ const HW_AUDIT_LOGIC = [
 
 const CMOS_THRESHOLD = 3.50;
 
+// --- STORAGE SERVER SEPARATION ---
+function isStorageHost(hostName){
+  return String(hostName||'').toLowerCase().includes('storage');
+}
+
+const STORAGE_ONLY_PARAMS = new Set([
+  "Storage NVME Hard Disk Labels",
+  "Storage NVME Hard Disk PCI Slot",
+  "Storage NVME Hard Disk Size",
+  "Storage NVME Hard Disk Health",
+  "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+  "Storage NVME Hard Disk Serial Number",
+  "Storage NVME Hard Disk Model Number",
+  "Storage NVME Hard Disk Firmware Version",
+  "Bad Block Count",
+  "CEPH Health Detail",
+  "CEPH list no of OSD's",
+  "Storage RAID Controller Model Number",
+  "JBOD Model Number",
+  "JBOD Firmware Build Package",
+  "JBOD Enclosure Disks Information for Storage",
+  "JBOD DISK INFORMATION",
+  "EID:SLT",
+  "DISK STATE",
+  "DISK GROUP (DG)",
+  "DG/VD",
+  "VIRTUAL DISK (VD)",
+  "DISK LABEL",
+  "RAID TYPE",
+  "RAID STATE",
+  "RAID DISK ACCESS MODE",
+  "RAID DISK CACHE MODE",
+  "RAID DISK STRIP SIZE",
+  "DISK CAPACITY",
+  "DISK SMART HEALTH STATUS",
+  "ERROR STATUS/TOTAL UNCORRECTED ERRORS",
+  "DISK SERIAL NUMBER",
+  "DISK MODEL NUMBER",
+  "DISK FIRMWARE VERSION",
+  "MEDIA WEAROUT INDICATOR",
+  "ERASE FAIL COUNT",
+  "OSD DETAILS",
+  "OSD ID",
+  "OSD STATUS",
+  "OSD DEVICE LABEL",
+  "FAST OSD DETAILS",
+  "FAST OSD ID",
+  "FAST OSD STATUS",
+  "FAST DEVICE LABEL",
+  "NVME DISK PCI SLOT",
+  "NVME DISK SIZE",
+  "NVME DISK HEALTH",
+  "NVME DISK ERRORS",
+  "NVME DISK SERIAL NUMBER",
+  "NVME DISK MODEL NUMBER",
+  "NVME DISK FIRMWARE VERSION",
+  "DID"
+]);
+
+const COMPUTE_ONLY_PARAMS = new Set([
+  "Product Number",
+  "Serial Number",
+  "BMC IP Address",
+  "BMC MAC Address",
+  "Critical Sensor Data Record",
+  "Non-Responsive Sensor Data Record",
+  "Disk error from BMC SEL Logs",
+  "Uncorrectable ECC error from BMC SEL Logs",
+  "Correctable ECC logging limit reached from BMC SEL Logs",
+  "CPU/Processor error from BMC SEL Logs",
+  "CPU/Processor error Dates from BMC SEL Logs",
+  "Number of DIMM Modules",
+  "Individual DIMM Size",
+  "DIMM Total Size",
+  "Each DIMM Serial,Manufacture,Speed & Slot",
+  "Faulty DIMM Slot Location",
+  "BMC BIOS Version",
+  "BMC Firmware Version",
+  "CPU Frequency Scaling",
+  "Nic Interfaces list",
+  "Nic Interfaces link status",
+  "Nic Interfaces Firmware version",
+  "Nic Interfaces Driver version",
+  "Compute/Master Hard Disk Labels",
+  "Compute/Master Hard Disk Size",
+  "Compute/Master Hard Disk Health",
+  "Compute/Master Hard Disk Errors / Total Uncorrected Errors",
+  "Compute/Master Hard Disk Serial Number",
+  "Compute/Master Hard Disk Model Number",
+  "Compute/Master Hard Disk Media_Wearout_Indicator",
+  "Redfish SessionTimeout",
+  "Compute/Master Hard Disk Firmware Version",
+  "Compute/Master Hard Disk Erase_Fail_Count"
+]);
+
 function evaluateHwParam(param, valueStr, hostName) {
   const val = String(valueStr || "").trim();
   const lower = val.toLowerCase();
   const logicEntry = HW_AUDIT_LOGIC.find(r => r.param.toLowerCase() === param.toLowerCase());
   const logic = logicEntry ? logicEntry.logic : "";
   const logicLower = logic.toLowerCase();
+  
+  const isStorage = isStorageHost(hostName);
+
+  // Separate applicability
+  if (isStorage) {
+    if (COMPUTE_ONLY_PARAMS.has(param)) {
+      return { ticket: false, reason: "Compute param not applicable to storage host" };
+    }
+  } else {
+    if (STORAGE_ONLY_PARAMS.has(param)) {
+      return { ticket: false, reason: "Storage param not applicable to compute host" };
+    }
+  }
+
+  // STORAGE BRANCH - only for storage hosts - per screenshot
+  if (isStorage && STORAGE_ONLY_PARAMS.has(param)) {
+    const hasNOK = lower.includes("nok");
+    const hasNoData = lower.includes("no data") || val === "" || lower === "na" || lower === "-";
+
+    const storageNokNodataParams = new Set([
+      "Storage NVME Hard Disk Labels",
+      "Storage NVME Hard Disk PCI Slot",
+      "Storage NVME Hard Disk Size",
+      "Storage NVME Hard Disk Health",
+      "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+      "Storage NVME Hard Disk Serial Number",
+      "Storage NVME Hard Disk Model Number",
+      "Storage NVME Hard Disk Firmware Version",
+      "Bad Block Count",
+      "DISK SERIAL NUMBER",
+      "DISK MODEL NUMBER",
+      "DISK FIRMWARE VERSION",
+      "NVME DISK SERIAL NUMBER",
+      "NVME DISK MODEL NUMBER",
+      "NVME DISK FIRMWARE VERSION",
+      "NVME DISK SIZE"
+    ]);
+
+    if (storageNokNodataParams.has(param)) {
+      if (hasNOK || hasNoData) {
+        return { ticket: true, reason: `${param} - ${hasNOK?'NOK':'No Data'}` };
+      }
+      if (!val) {
+        return { ticket: true, reason: `${param} - Empty/No Data` };
+      }
+    }
+
+    if (param === "CEPH Health Detail") {
+      if (hasNOK) return { ticket: true, reason: "CEPH Health Detail NOK" };
+    }
+
+    if (param === "CEPH list no of OSD's") {
+      const hasNOK = lower.includes("nok");
+      const hasNoData = lower.includes("no data") || val.trim()==="" || lower==="na" || lower==="-";
+      
+      if (hasNOK) return { ticket: true, reason: "CEPH OSD NOK - Found NOK per logic" };
+      if (hasNoData) return { ticket: true, reason: "CEPH OSD No Data/Empty - Not found per logic, need to raise" };
+      if (!val.trim()) return { ticket: true, reason: "CEPH OSD Empty - Not found, need to raise" };
+      
+      let osdCount = null;
+      const patterns = [
+        /(\d+)\s*osd/i,
+        /osd\s*[:=]?\s*(\d+)/i,
+        /total\s*osd.*? (\d+)/i
+      ];
+      for(const pat of patterns){
+        const m = val.match(pat);
+        if(m){ osdCount = parseInt(m[1]); break; }
+      }
+      if(osdCount===null){
+        const m = val.match(/\b(\d+)\b/);
+        if(m) osdCount = parseInt(m[1]);
+      }
+      
+      if(osdCount!==null && osdCount!==45){
+        return { ticket: true, reason: `CEPH OSD count ${osdCount} !=45 - Should be 45 per logic, need to raise` };
+      }
+      if(osdCount===null){
+        const nums = [...val.matchAll(/\d+/g)].map(x=>parseInt(x[0]));
+        if(nums.length===0) return { ticket: true, reason: "CEPH OSD count not found - Not found per logic, need to raise" };
+        if(!nums.includes(45)) return { ticket: true, reason: `CEPH OSD count ${nums} - No 45 found, should be 45` };
+      }
+      
+      if(lower.includes("down")){
+        const downMatch = val.match(/(\d+)\s*down/i);
+        if(downMatch){
+          const downCount = parseInt(downMatch[1]);
+          if(downCount>0) return { ticket: true, reason: `CEPH OSD ${downCount} down - All should be up per logic` };
+        } else {
+          if(!lower.includes("0 down")) return { ticket: true, reason: "CEPH OSD down found - All should be up per logic" };
+        }
+      }
+      
+      const upMatch = val.match(/(\d+)\s*up/i);
+      if(upMatch){
+        const upCount = parseInt(upMatch[1]);
+        if(upCount!==45) return { ticket: true, reason: `CEPH OSD up count ${upCount} !=45 - All 45 should be up per logic` };
+      }
+    }
+
+    if (param === "Storage RAID Controller Model Number") {
+      if (hasNOK) return { ticket: true, reason: "RAID Controller NOK" };
+    }
+
+    // generic storage fallback
+    if (logicLower.includes("if found nok or no data")) {
+      if (hasNOK || hasNoData) return { ticket: true, reason: `${hasNOK?'NOK':''} ${hasNoData?'No Data':''}`.trim() };
+    } else if (logicLower.includes("if found nok")) {
+      if (hasNOK) return { ticket: true, reason: "Found NOK" };
+    }
+  }
   
   if (!logic || logicLower.includes("not required") || logicLower.trim() === "") {
     return { ticket: false, reason: "Not Required" };
@@ -784,8 +990,8 @@ function evaluateHwParam(param, valueStr, hostName) {
   }
   if (param === "CPU Frequency Scaling") {
     const num = extractNumber(val);
-    const isStorage = hostName.toLowerCase().includes("storagebm");
-    const threshold = isStorage ? 48 : 64;
+    const isStorageBm = hostName.toLowerCase().includes("storagebm");
+    const threshold = isStorageBm ? 48 : 64;
     if (num !== null && num < threshold) return { ticket: true, reason: `CPU scaling ${num} <${threshold}` };
   }
   if (param === "Nic Interfaces list") {
@@ -802,29 +1008,30 @@ function evaluateHwParam(param, valueStr, hostName) {
   }
   if (param === "Compute/Master Hard Disk Health") {
     const isEmpty = !val.trim();
-    const hasNoData = lower.includes("no data");
-    const hasNOK = lower.includes("nok") || lower.includes("failed");
-    if (isEmpty || hasNoData || hasNOK || (!lower.includes("passed") && !lower.includes("ok"))) {
-      if(isEmpty) return { ticket: true, reason: "Health EMPTY - No value found" };
-      if(hasNoData) return { ticket: true, reason: `Health No Data: ${val}` };
-      if(hasNOK) return { ticket: true, reason: `Health NOK/Failed: ${val}` };
+    const hasNoDataLocal = lower.includes("no data");
+    const hasNokLocal = lower.includes("nok") || lower.includes("failed");
+    if (isEmpty || hasNoDataLocal || hasNokLocal || (!lower.includes("passed") && !lower.includes("ok"))) {
+      if (isEmpty) return { ticket: true, reason: "Health EMPTY - No value found" };
+      if (hasNoDataLocal) return { ticket: true, reason: `Health No Data: ${val}` };
+      if (hasNokLocal) return { ticket: true, reason: `Health NOK/Failed: ${val}` };
       return { ticket: true, reason: `Health not PASSED/OK: ${val || 'EMPTY'}` };
     }
   }
   if (param === "Compute/Master Hard Disk Errors / Total Uncorrected Errors") {
+    if (!lower.includes("no errors") && !lower.includes("ok")) {
+      return { ticket: true, reason: "Errors found" };
+    }
+  }
+if (param === "Compute/Master Hard Disk Errors / Total Uncorrected Errors") {
     const isEmpty = !val.trim();
     const hasNoData = lower.includes("no data");
-    const hasNOK = lower.includes("nok");
-    const hasFailed = lower.includes("failed");
-    const hasErrorsLogged = lower.includes("error") && !lower.includes("no errors");
-    const isValid = lower.includes("no errors logged") || (lower.includes("ok") && !hasNoData && !hasNOK);
-    
-    if (isEmpty) return { ticket: true, reason: "Errors EMPTY - No value found" };
-    if (hasNoData) return { ticket: true, reason: `Errors No Data: ${val}` };
-    if (hasNOK) return { ticket: true, reason: `Errors NOK: ${val}` };
-    if (hasFailed) return { ticket: true, reason: `Errors Failed: ${val}` };
-    if (hasErrorsLogged) return { ticket: true, reason: `Errors Logged found: ${val}` };
-    if (!isValid) return { ticket: true, reason: `Errors not 'No Errors Logged' or 'OK': ${val || 'EMPTY'}` };
+    const hasNOK = lower.includes("nok") || lower.includes("failed");
+    if (isEmpty || hasNoData || hasNOK || (!lower.includes("No Errors Logged") && !lower.includes("ok"))) {
+      if(isEmpty) return { ticket: true, reason: "Health EMPTY - No value found" };
+      if(hasNoData) return { ticket: true, reason: `Health No Data: ${val}` };
+      if(hasNOK) return { ticket: true, reason: `Health NOK/Failed: ${val}` };
+      return { ticket: true, reason: `Errors Logged/OK: ${val || 'EMPTY'}` };
+    }
   }
   if (param.toLowerCase().includes("media_wearout_indicator") || param === "MEDIA WEAROUT INDICATOR") {
     const vm = val.match(/VALUE\s*([0-9]+)/i);
@@ -848,126 +1055,7 @@ function evaluateHwParam(param, valueStr, hostName) {
       if (volt > CMOS_THRESHOLD) return { ticket: true, reason: `CMOS ${volt}V > ${CMOS_THRESHOLD}V` };
     }
   }
-
-  // ===== STORAGE ALL COMMANDS - SEPARATE LOGIC =====
-  const storageNvmeParams = [
-    "Storage NVME Hard Disk Labels",
-    "Storage NVME Hard Disk PCI Slot",
-    "Storage NVME Hard Disk Size",
-    "Storage NVME Hard Disk Health",
-    "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
-    "Storage NVME Hard Disk Serial Number",
-    "Storage NVME Hard Disk Model Number",
-    "Storage NVME Hard Disk Firmware Version",
-    "Bad Block Count"
-  ];
-  
-  if (storageNvmeParams.includes(param)) {
-    const isEmpty = !val.trim();
-    const hasNoData = lower.includes("no data");
-    const hasNOK = lower.includes("nok");
-    if (isEmpty) return { ticket: true, reason: `${param} EMPTY - No value` };
-    if (hasNoData) return { ticket: true, reason: `${param} No Data: ${val}` };
-    if (hasNOK) return { ticket: true, reason: `${param} NOK: ${val}` };
-    // Also check generic NOK/No Data via logic
-    if (logicLower.includes("nok or no data") && (hasNOK || hasNoData)) {
-      return { ticket: true, reason: `${hasNOK?'NOK':''} ${hasNoData?'No Data':''}`.trim() };
-    }
-  }
-  
-  if (param === "CEPH Health Detail") {
-    const isEmpty = !val.trim();
-    const hasNOK = lower.includes("nok");
-    const hasHealthErr = lower.includes("health_err") || lower.includes("health_warn") || (lower.includes("health") && !lower.includes("health_ok"));
-    // Valid is HEALTH_OK and OK
-    if (isEmpty) return { ticket: true, reason: "CEPH Health EMPTY" };
-    if (hasNOK) return { ticket: true, reason: `CEPH NOK: ${val}` };
-    if (!lower.includes("health_ok") && !lower.includes("ok")) {
-      return { ticket: true, reason: `CEPH Health not OK: ${val}` };
-    }
-    if (hasHealthErr && !lower.includes("health_ok")) {
-      return { ticket: true, reason: `CEPH HEALTH_ERR/WARN: ${val}` };
-    }
-  }
-  
-  if (param === "CEPH list no of OSD's") {
-    const isEmpty = !val.trim();
-    const hasNOK = lower.includes("nok");
-    const hasNoData = lower.includes("no data");
-    
-    // Parse total OSD count: osd: 45
-    const osdMatch = val.match(/osd[:\s]*([0-9]+)/i);
-    const totalOsd = osdMatch ? parseInt(osdMatch[1]) : null;
-    
-    // Parse up count: 45 up, 45 down
-    const upMatch = val.match(/([0-9]+)\s*up/i);
-    const downMatch = val.match(/([0-9]+)\s*down/i);
-    const upCount = upMatch ? parseInt(upMatch[1]) : null;
-    const downCount = downMatch ? parseInt(downMatch[1]) : null;
-    
-    // Logic: If found NOK and osd count should be 45 and all osd should be up, if not found need to raise
-    if (isEmpty) return { ticket: true, reason: "CEPH OSD EMPTY - No value" };
-    if (hasNoData) return { ticket: true, reason: `CEPH OSD No Data: ${val}` };
-    if (hasNOK) return { ticket: true, reason: `CEPH OSD NOK: ${val}` };
-    
-    // Check if osd count is 45
-    if (totalOsd !== null && totalOsd !== 45) {
-      return { ticket: true, reason: `OSD count ${totalOsd} != 45 (expected 45)` };
-    }
-    if (totalOsd !== null && totalOsd < 45) {
-      return { ticket: true, reason: `OSD count ${totalOsd} < 45` };
-    }
-    
-    // Check if all osd should be up - if down > 0, raise ticket
-    if (downCount !== null && downCount > 0) {
-      return { ticket: true, reason: `OSD DOWN detected: ${downCount} down - All should be up. Value: ${val}` };
-    }
-    
-    // If we have up count, it should be 45
-    if (upCount !== null && upCount !== 45) {
-      return { ticket: true, reason: `OSD up count ${upCount} != 45 - All should be up. Value: ${val}` };
-    }
-    
-    // If string contains "down" at all, even if it says OK, it's down - should raise
-    if (lower.includes(" down") || lower.includes("down (")) {
-      return { ticket: true, reason: `OSD has DOWN state: ${val} - All should be up` };
-    }
-    
-    // If up count < total, not all up
-    if (upCount !== null && totalOsd !== null && upCount < totalOsd) {
-      return { ticket: true, reason: `OSD not all up: ${upCount}/${totalOsd} up. Value: ${val}` };
-    }
-    
-    // Valid only if 45 osds, 45 up, 45 in, and HEALTH_OK/OK
-    if (totalOsd === 45 && upCount === 45 && downCount === null) {
-      return { ticket: false, reason: "OSD OK - 45/45 up" };
-    }
-    
-    // If no clear up count but total is 45 and no down, check for OK
-    if (totalOsd === 45 && !lower.includes("down") && (lower.includes("ok") || lower.includes("up"))) {
-      return { ticket: false, reason: "OSD OK" };
-    }
-  }
-  
-  const storageRaidParams = [
-    "Storage RAID Controller Model Number",
-    "JBOD Model Number",
-    "JBOD Firmware Build Package"
-  ];
-  
-  if (storageRaidParams.includes(param)) {
-    const isEmpty = !val.trim();
-    const hasNOK = lower.includes("nok");
-    const hasNoData = lower.includes("no data");
-    if (isEmpty) return { ticket: true, reason: `${param} EMPTY` };
-    if (hasNOK) return { ticket: true, reason: `${param} NOK: ${val}` };
-    if (hasNoData) return { ticket: true, reason: `${param} No Data` };
-    // Logic says NOK only, but empty/No Data also should raise
-  }
-
-  // ===== END STORAGE LOGIC =====
-
-    const lessThanMatch = logicLower.match(/less than\s*([0-9]+)/);
+  const lessThanMatch = logicLower.match(/less than\s*([0-9]+)/);
   if (lessThanMatch) {
     const threshold = parseFloat(lessThanMatch[1]);
     const gb = extractGB(val);
@@ -991,7 +1079,7 @@ function evaluateHwParam(param, valueStr, hostName) {
   return { ticket: false, reason: "OK" };
 }
 
-let allViolations = [];
+let allIssues = [];
 
 
 let cmosIssues = [];
@@ -1002,94 +1090,135 @@ function renderAuditAnalysis(){
   const totalRows = auditRawData.length;
   const totalCols = auditHeaders.length;
   
-  // Find hosts row
-  let hostsRow = null;
-  for(const row of auditRawData){
-    const first = String(Object.values(row)[0] || "").toLowerCase();
-    if(first.includes("all commands")){
-      hostsRow = row;
-      break;
+  // Find hosts - FIXED: exact match for All commands, skip STORAGE ALL COMMANDS
+  const allCmdRows = [];
+  for(let i=0;i<auditRawData.length;i++){
+    const row = auditRawData[i];
+    const first = String(row[auditHeaders[0]] || Object.values(row)[0] || "").trim();
+    if(first.toLowerCase() === "all commands"){
+      const secondHeader = auditHeaders[1];
+      const hostName = String(row[secondHeader] || "").trim();
+      if(hostName && hostName.length>2 && !hostName.toLowerCase().includes("all commands")) allCmdRows.push({idx:i, name:hostName});
     }
   }
   
-  // Build host list
   const hosts = [];
-  if(hostsRow){
-    for(const h of auditHeaders){
-      const hostName = String(hostsRow[h]||"").trim();
-      if(hostName && hostName !== "All commands" && !hostName.toLowerCase().includes("compute") && hostName.length>2){
-        hosts.push({header:h, name:hostName});
+  let isVertical = false;
+  const headerIsVertical = auditHeaders[0] && String(auditHeaders[0]).toLowerCase() === 'all commands' && auditHeaders.length>=2;
+  if(headerIsVertical){
+    isVertical = true;
+    const firstHostName = String(auditHeaders[1]||'').trim();
+    if(firstHostName && firstHostName.length>2 && firstHostName.toLowerCase()!=='all commands' && !firstHostName.toLowerCase().includes('storage all commands')){
+      let firstEnd = auditRawData.length;
+      for(let j=0;j<auditRawData.length;j++){
+        const p = String(auditRawData[j][auditHeaders[0]] || "").trim().toUpperCase();
+        if(p.includes("STORAGE ALL COMMANDS") || p.includes("COMPUTE ALL COMMANDS")){ firstEnd=j; break; }
+        if(p === "ALL COMMANDS"){ firstEnd=j; break; }
+      }
+      hosts.push({name:firstHostName, start:0, end:firstEnd, mode:"vertical", header:auditHeaders[1]});
+    }
+    for(let hIdx=0; hIdx<allCmdRows.length; hIdx++){
+      const cur = allCmdRows[hIdx];
+      const nextIdx = hIdx+1 < allCmdRows.length ? allCmdRows[hIdx+1].idx : auditRawData.length;
+      let end = nextIdx;
+      for(let j=cur.idx+1; j<nextIdx; j++){
+        const p = String(auditRawData[j][auditHeaders[0]] || "").trim().toUpperCase();
+        if(p.includes("STORAGE ALL COMMANDS") || p.includes("COMPUTE ALL COMMANDS")){ end=j; break; }
+      }
+      if(hosts.length && hosts[0].name === cur.name) continue;
+      hosts.push({name:cur.name, start:cur.idx+1, end:end, mode:"vertical", header:auditHeaders[1]});
+    }
+  } else if(allCmdRows.length >= 1){
+    isVertical = true;
+    for(let hIdx=0; hIdx<allCmdRows.length; hIdx++){
+      const cur = allCmdRows[hIdx];
+      const nextIdx = hIdx+1 < allCmdRows.length ? allCmdRows[hIdx+1].idx : auditRawData.length;
+      let end = nextIdx;
+      for(let j=cur.idx+1; j<nextIdx; j++){
+        const p = String(auditRawData[j][auditHeaders[0]] || "").trim().toUpperCase();
+        if(p.includes("STORAGE ALL COMMANDS") || p.includes("COMPUTE ALL COMMANDS")){ end=j; break; }
+      }
+      hosts.push({name:cur.name, start:cur.idx+1, end:end, mode:"vertical", header:auditHeaders[1]});
+    }
+  } else {
+    // Horizontal fallback - also exact match
+    let hostsRow = null;
+    for(const row of auditRawData){
+      const first = String(Object.values(row)[0] || "").trim().toLowerCase();
+      if(first === "all commands"){
+        hostsRow = row; break;
+      }
+    }
+    if(hostsRow){
+      for(const h of auditHeaders){
+        const hostName = String(hostsRow[h]||"").trim();
+        if(hostName && hostName.toLowerCase() !== "all commands" && !hostName.toLowerCase().includes("compute all commands") && !hostName.toLowerCase().includes("storage all commands") && hostName.length>2){
+          hosts.push({header:h, name:hostName, mode:"horizontal"});
+        }
+      }
+    } else {
+      for(let i=1;i<auditHeaders.length;i++){
+        const hn = String(auditHeaders[i]||"").trim();
+        if(hn.toLowerCase().includes("storage all commands") || hn.toLowerCase().includes("compute all commands")) continue;
+        hosts.push({header:auditHeaders[i], name:hn, mode:"horizontal"});
+      }
+    }
+  }
+  
+  allIssues = [];
+  cmosIssues = [];
+  
+  if(isVertical){
+    for(const host of hosts){
+      for(let i=host.start; i<host.end; i++){
+        const row = auditRawData[i];
+        const param = String(row[auditHeaders[0]] || Object.values(row)[0] || "").trim();
+        if(!param || param.toUpperCase().includes("STORAGE ALL COMMANDS") || param.toUpperCase().includes("COMPUTE ALL COMMANDS") || param.toLowerCase()==="all commands" || param==="") continue;
+        const logicEntry = HW_AUDIT_LOGIC.find(r=>r.param.toLowerCase() === param.toLowerCase());
+        if(!logicEntry) continue;
+        const value = String(row[host.header] || "").trim();
+        const result = evaluateHwParam(param, value, host.name);
+        if(result.ticket){
+          allIssues.push({host: host.name, param: param, value: value, logic: logicEntry.logic, reason: result.reason, ticketRequired: "YES", action: `Raise Ticket - ${param}: ${result.reason}`, isStorage: isStorageHost(host.name)});
+        }
       }
     }
   } else {
-    // fallback: use headers as host names except first
-    for(let i=1;i<auditHeaders.length;i++){
-      hosts.push({header:auditHeaders[i], name:auditHeaders[i]});
-    }
-  }
-  
-  allViolations = [];
-  cmosIssues = [];
-  
-  // Evaluate each param row for each host
-  for(const row of auditRawData){
-    const param = String(row[auditHeaders[0]] || Object.values(row)[0] || "").trim();
-    if(!param || param.toLowerCase().includes("compute all commands") || param.toLowerCase().includes("all commands") || param.toLowerCase() === "" ) continue;
-    // Skip STORAGE ALL COMMANDS header etc if logic is empty and param is grouping
-    const logicEntry = HW_AUDIT_LOGIC.find(r=>r.param.toLowerCase() === param.toLowerCase());
-    if(!logicEntry) continue;
-    if(logicEntry.logic.toLowerCase().includes("not required") || logicEntry.logic.trim()==="") {
-      // Still check CMOS even if logic says Not Required per sheet? User wants CMOS check at 3.5V
-      if(param !== "CMOS Current Voltage") continue;
-    }
-    
-    for(const host of hosts){
-      const value = String(row[host.header] || "").trim();
-      // For health checks, empty also needs ticket - don't skip, let evaluator handle it
-      // if(!value && param !== "Compute/Master Hard Disk Health" && !param.toLowerCase().includes("health") && !param.toLowerCase().includes("serial") && !param.toLowerCase().includes("model")) continue;
-      // Actually we want to check empty for all ticket-required params
-      
-      const result = evaluateHwParam(param, value, host.name);
-      if(result.ticket){
-        const violation = {
-          host: host.name,
-          param: param,
-          value: value,
-          logic: logicEntry.logic,
-          reason: result.reason,
-          ticketRequired: "YES",
-          action: `Raise Ticket - ${param}: ${result.reason}`
-        };
-        allViolations.push(violation);
-        if(param === "CMOS Current Voltage"){
-          const m = value.match(/([0-9]+\.?[0-9]*)\s*volts/i);
-          const volt = m ? parseFloat(m[1]) : null;
-          cmosIssues.push({host:host.name, voltage:volt, raw:value, threshold:CMOS_THRESHOLD, action:violation.action});
+    for(const row of auditRawData){
+      const param = String(row[auditHeaders[0]] || Object.values(row)[0] || "").trim();
+      if(!param || param.toLowerCase().includes("compute all commands") || param.toLowerCase().includes("storage all commands") || param.toLowerCase()==="all commands" || param.toLowerCase() === "" ) continue;
+      const logicEntry = HW_AUDIT_LOGIC.find(r=>r.param.toLowerCase() === param.toLowerCase());
+      if(!logicEntry) continue;
+      for(const host of hosts){
+        const value = String(row[host.header] || "").trim();
+        const result = evaluateHwParam(param, value, host.name);
+        if(result.ticket){
+          allIssues.push({host: host.name, param: param, value: value, logic: logicEntry.logic, reason: result.reason, ticketRequired: "YES", action: `Raise Ticket - ${param}: ${result.reason}`, isStorage: isStorageHost(host.name)});
         }
       }
     }
   }
   
   // Stats
-  const uniqueHostsWithIssues = [...new Set(allViolations.map(v=>v.host))].length;
+  const uniqueHostsWithIssues = [...new Set(allIssues.map(v=>v.host))].length;
   const cmosCount = cmosIssues.length;
   
   let html = `<div class="audit-stats-grid">
       <div class="audit-stat-card"><div class="stat-label">Total Rows</div><div class="stat-value">${totalRows}</div></div>
       <div class="audit-stat-card"><div class="stat-label">Total Hosts</div><div class="stat-value">${hosts.length}</div></div>
-      <div class="audit-stat-card"><div class="stat-label">Total Violations</div><div class="stat-value" style="color:${allViolations.length>0?'#dc2626':'#16a34a'}">${allViolations.length}</div></div>
+      <div class="audit-stat-card"><div class="stat-label">Total Issues</div><div class="stat-value" style="color:${allIssues.length>0?'#dc2626':'#16a34a'}">${allIssues.length}</div></div>
       <div class="audit-stat-card"><div class="stat-label">Hosts With Issues</div><div class="stat-value" style="color:${uniqueHostsWithIssues>0?'#d97706':'#16a34a'}">${uniqueHostsWithIssues}</div></div>
     </div>`;
   
-  if(allViolations.length>0){
+  if(allIssues.length>0){
     // Group by param
     const byParam = {};
-    allViolations.forEach(v=>{
+    allIssues.forEach(v=>{
       if(!byParam[v.param]) byParam[v.param]=0;
       byParam[v.param]++;
     });
     html += `<div style="margin-top:16px; background:#fee2e2; border:1px solid #fecaca; border-left:4px solid #dc2626; border-radius:10px; padding:14px;">
-      <div style="font-weight:800; color:#991b1b; font-size:13px;"><i class="fa-solid fa-triangle-exclamation"></i> HW Audit - ${allViolations.length} violations across ${uniqueHostsWithIssues} hosts - Tickets Required</div>
+      <div style="font-weight:800; color:#991b1b; font-size:13px;"><i class="fa-solid fa-triangle-exclamation"></i> HW Audit - ${allIssues.length} issues across ${uniqueHostsWithIssues} hosts - Tickets Required</div>
       <div style="font-size:11px; color:#7f1d1d; margin-top:6px;">All issues below need tickets to be raised. Download single Excel sheet with all results.</div>
       <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
         ${Object.entries(byParam).slice(0,15).map(([p,c])=>`<span class="audit-badge error">${p}: ${c}</span>`).join('')}
@@ -1097,13 +1226,12 @@ function renderAuditAnalysis(){
       </div>
       <div style="margin-top:10px; max-height:250px; overflow:auto; background:white; border-radius:8px; border:1px solid #fecaca;">
         <table class="audit-table"><thead><tr><th>Host</th><th>Parameter</th><th>Value</th><th>Reason</th><th>Ticket</th></tr></thead><tbody>
-          ${allViolations.slice(0,50).map(v=>`<tr><td>${v.host}</td><td style="font-weight:600;">${v.param}</td><td style="max-width:200px; overflow:hidden; text-overflow:ellipsis;" title="${v.value.replace(/"/g,'&quot;')}">${String(v.value).substring(0,80)}</td><td style="color:#991b1b;">${v.reason}</td><td><span class="audit-badge error">YES</span></td></tr>`).join('')}
+          ${allIssues.slice(0,50).map(v=>`<tr><td>${v.host}</td><td style="font-weight:600;">${v.param}</td><td style="max-width:200px; overflow:hidden; text-overflow:ellipsis;" title="${v.value.replace(/"/g,'&quot;')}">${String(v.value).substring(0,80)}</td><td style="color:#991b1b;">${v.reason}</td><td><span class="audit-badge error">YES</span></td></tr>`).join('')}
         </tbody></table>
-        ${allViolations.length>50 ? `<div style="padding:6px; font-size:11px; text-align:center; color:#991b1b;">Showing 50 of ${allViolations.length} - Download full Excel for all</div>` : ''}
+        ${allIssues.length>50 ? `<div style="padding:6px; font-size:11px; text-align:center; color:#991b1b;">Showing 50 of ${allIssues.length} - Download full Excel for all</div>` : ''}
       </div>
       <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="audit-download-btn" style="background:#dc2626;" onclick="downloadAllViolationsExcel()"><i class="fa-solid fa-file-excel"></i> Download All Violations - Single Sheet (${allViolations.length} issues)</button>
-        <button class="audit-download-btn secondary" onclick="downloadCmosExcel()"><i class="fa-solid fa-bolt"></i> CMOS Only (${cmosCount})</button>
+        <button class="audit-download-btn" style="background:#dc2626;" onclick="downloadAllIssuesExcel()"><i class="fa-solid fa-file-excel"></i> Download All Issues - Single Sheet (${allIssues.length} issues)</button>
       </div>
     </div>`;
   } else {
@@ -1137,59 +1265,18 @@ function renderAuditAnalysis(){
   resultDiv.innerHTML = html;
   
   const dlGroup = document.getElementById('auditDownloadGroup');
-  if(dlGroup){ dlGroup.style.display='block'; const inner = dlGroup.querySelector('.audit-download-group'); if(inner) inner.style.display='flex'; const cmosBtn = document.getElementById('cmosDlBtn'); if(cmosBtn) cmosBtn.style.display = cmosIssues.length ? 'inline-flex' : 'none'; const allBtn = document.getElementById('allViolationsBtn'); if(allBtn) allBtn.style.display = allViolations.length ? 'inline-flex' : 'none'; }
+  if(dlGroup){ dlGroup.style.display='block'; const inner = dlGroup.querySelector('.audit-download-group'); if(inner) inner.style.display='flex'; const cmosBtn = document.getElementById('cmosDlBtn'); if(cmosBtn) cmosBtn.style.display = cmosIssues.length ? 'inline-flex' : 'none'; const allBtn = document.getElementById('allIssuesBtn'); if(allBtn) allBtn.style.display = allIssues.length ? 'inline-flex' : 'none'; }
 }
 
-function downloadAllViolationsExcel(){
-  if(!allViolations.length){ alert('No violations found - all checks passed!'); return; }
+function downloadAllIssuesExcel(){
+  if(!allIssues.length){ alert('No issues found - all checks passed!'); return; }
   const header = ["Host", "Parameter", "Value", "Logic Rule", "Failure Reason", "Ticket Required", "Action", "Severity", "Date"];
   const rows = [header];
-  
-  // Storage params list for separate sheet
-  const storageParamsList = [
-    "Storage NVME Hard Disk Labels",
-    "Storage NVME Hard Disk PCI Slot",
-    "Storage NVME Hard Disk Size",
-    "Storage NVME Hard Disk Health",
-    "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
-    "Storage NVME Hard Disk Serial Number",
-    "Storage NVME Hard Disk Model Number",
-    "Storage NVME Hard Disk Firmware Version",
-    "Bad Block Count",
-    "CEPH Health Detail",
-    "CEPH list no of OSD's",
-    "Storage RAID Controller Model Number",
-    "JBOD Model Number",
-    "JBOD Firmware Build Package",
-    "EID:SLT",
-    "DISK STATE",
-    "DISK CAPACITY",
-    "DISK SMART HEALTH STATUS",
-    "ERROR STATUS/TOTAL UNCORRECTED ERRORS",
-    "DISK SERIAL NUMBER",
-    "DISK MODEL NUMBER",
-    "DISK FIRMWARE VERSION",
-    "MEDIA WEAROUT INDICATOR",
-    "ERASE FAIL COUNT",
-    "OSD ID",
-    "OSD STATUS",
-    "FAST OSD ID",
-    "FAST OSD STATUS"
-  ];
-  
-  const storageRows = [header];
-  const computeRows = [header];
-  
-  allViolations.forEach(v=>{
+  allIssues.forEach(v=>{
     let severity = "Medium";
     if(v.param.toLowerCase().includes("critical") || v.param.toLowerCase().includes("disk error") || v.param.toLowerCase().includes("cpu") || v.param.toLowerCase().includes("dimm")) severity="High";
     if(v.param.includes("CMOS")) severity="High";
-    if(v.param.includes("Storage") || v.param.includes("CEPH") || v.param.includes("JBOD") || v.param.includes("OSD") || v.param.includes("DISK") || v.param.includes("Bad Block") || storageParamsList.some(sp => v.param.toLowerCase().includes(sp.toLowerCase().split(' ')[0]))) {
-      // More precise check
-      const isStorage = storageParamsList.includes(v.param) || v.param.startsWith("Storage") || v.param.startsWith("CEPH") || v.param.startsWith("JBOD") || v.param.includes("OSD") || v.param.includes("DISK") && !v.param.includes("Compute/Master Hard Disk");
-      // Actually use includes check
-    }
-    const rowData = [
+    rows.push([
       v.host,
       v.param,
       v.value,
@@ -1199,71 +1286,28 @@ function downloadAllViolationsExcel(){
       v.action,
       severity,
       new Date().toLocaleString()
-    ];
-    rows.push(rowData);
-    
-    // Separate storage vs compute
-    const isStorageParam = storageParamsList.includes(v.param) || 
-                          v.param.toLowerCase().includes("storage nvme") ||
-                          v.param.toLowerCase().includes("ceph") ||
-                          v.param.toLowerCase().includes("jbod") ||
-                          v.param.toLowerCase().includes("bad block") ||
-                          v.param.toLowerCase().includes("raid controller") ||
-                          (v.param.includes("OSD") && !v.param.includes("CEPH list")) ||
-                          (v.param.includes("DISK") && !v.param.startsWith("Compute/Master"));
-    
-    // More accurate: check if param is in storage list OR starts with Storage/CEPH/JBOD/Bad Block OR is OSD/DISK but not Compute
-    const isStorage = storageParamsList.some(sp => v.param === sp) ||
-                      v.param.startsWith("Storage") ||
-                      v.param.startsWith("CEPH") ||
-                      v.param.startsWith("JBOD") ||
-                      v.param === "Bad Block Count" ||
-                      (v.param.includes("OSD") && v.param !== "CEPH list no of OSD's" ? true : v.param === "CEPH list no of OSD's") ||
-                      (["EID:SLT","DISK STATE","DISK CAPACITY","DISK SMART HEALTH STATUS","ERROR STATUS/TOTAL UNCORRECTED ERRORS","DISK SERIAL NUMBER","DISK MODEL NUMBER","DISK FIRMWARE VERSION","MEDIA WEAROUT INDICATOR","ERASE FAIL COUNT","OSD ID","OSD STATUS","FAST OSD ID","FAST OSD STATUS"].includes(v.param));
-    
-    // Simplified: if param contains Storage, CEPH, JBOD, Bad Block, OSD, or is in DISK list without Compute
-    const finalIsStorage = v.param.includes("Storage") || v.param.includes("CEPH") || v.param.includes("JBOD") || v.param.includes("Bad Block") || v.param.includes("OSD") || ["EID:SLT","DISK STATE","DISK CAPACITY","DISK SMART HEALTH STATUS","ERROR STATUS/TOTAL UNCORRECTED ERRORS","DISK SERIAL NUMBER","DISK MODEL NUMBER","DISK FIRMWARE VERSION","MEDIA WEAROUT INDICATOR","ERASE FAIL COUNT","OSD ID","OSD STATUS","FAST OSD ID","FAST OSD STATUS","DISK LABEL","RAID TYPE","RAID STATE"].includes(v.param);
-    
-    if(finalIsStorage){
-      storageRows.push(rowData);
-    } else {
-      computeRows.push(rowData);
-    }
+    ]);
   });
-  
   // Summary sheet data
-  const storageCount = storageRows.length - 1;
-  const computeCount = computeRows.length - 1;
   const summary = [
     ["HW Audit Automation - Full Logic Check"],
     ["File", auditFileName],
     ["Date", new Date().toLocaleString()],
-    ["Total Hosts", [...new Set(allViolations.map(v=>v.host))].length || 0],
+    ["Total Hosts", [...new Set(allIssues.map(v=>v.host))].length || 0],
     ["Total Rules Checked", HW_AUDIT_LOGIC.length],
-    ["Total Violations", allViolations.length],
-    ["Compute/Master Violations", computeCount],
-    ["Storage Violations", storageCount],
+    ["Total Issues", allIssues.length],
     ["CMOS Threshold", CMOS_THRESHOLD + "V"],
     [""],
     ["Breakdown by Parameter"],
-    ...Object.entries(allViolations.reduce((acc,v)=>{acc[v.param]=(acc[v.param]||0)+1; return acc;}, {})).map(([p,c])=>[p,c]),
+    ...Object.entries(allIssues.reduce((acc,v)=>{acc[v.param]=(acc[v.param]||0)+1; return acc;}, {})).map(([p,c])=>[p,c]),
     [""],
     ["Ticket Summary"],
-    ["All violations listed need tickets to be raised per logic sheet HW_Audit_Automation_Logic.xlsx"]
+    ["All issues listed need tickets to be raised per logic sheet HW_Audit_Automation_Logic.xlsx"]
   ];
   
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws1, "All_Violations_Single_Sheet");
-  
-  // Storage issues in separate sheet - SAME EXCEL BOOK
-  const wsStorage = XLSX.utils.aoa_to_sheet(storageRows.length > 1 ? storageRows : [["Host","Parameter","Value","Logic Rule","Failure Reason","Ticket Required","Action","Severity","Date"],["No Storage Issues Found","-","-","-","All Storage Checks Passed","NO","-","-",""]]);
-  XLSX.utils.book_append_sheet(wb, wsStorage, "Storage_Issues");
-  
-  // Compute issues separate sheet
-  const wsCompute = XLSX.utils.aoa_to_sheet(computeRows.length > 1 ? computeRows : [["Host","Parameter","Value","Logic Rule","Failure Reason","Ticket Required","Action","Severity","Date"],["No Compute Issues","-","-","-","All Compute Checks Passed","NO","-","-",""]]);
-  XLSX.utils.book_append_sheet(wb, wsCompute, "Compute_Issues");
-  
+  XLSX.utils.book_append_sheet(wb, ws1, "All_Issues_Single_Sheet");
   const ws2 = XLSX.utils.aoa_to_sheet(summary);
   XLSX.utils.book_append_sheet(wb, ws2, "Summary");
   if(auditRawData.length){
@@ -1280,7 +1324,7 @@ function downloadAllViolationsExcel(){
 function downloadAuditReport(){
   if(!auditRawData.length){ alert('No data'); return; }
   const statsHtml = document.getElementById('auditResult').innerHTML;
-  const cmosSection = cmosIssues.length ? `<h3 style="color:#dc2626;">CMOS Voltage Issues (${cmosIssues.length} hosts >3.50V) - Tickets Required</h3><p>Threshold: 3.50V</p><table border="1" cellpadding="6" style="border-collapse:collapse;"><tr><th>Host</th><th>Voltage</th><th>Action</th></tr>${cmosIssues.map(it=>`<tr><td>${it.host}</td><td style="color:red; font-weight:bold;">${it.voltage}V</td><td>Raise Ticket</td></tr>`).join('')}</table><br>` : '<p style="color:green;">No CMOS voltage violations</p>';
+  const cmosSection = cmosIssues.length ? `<h3 style="color:#dc2626;">CMOS Voltage Issues (${cmosIssues.length} hosts >3.50V) - Tickets Required</h3><p>Threshold: 3.50V</p><table border="1" cellpadding="6" style="border-collapse:collapse;"><tr><th>Host</th><th>Voltage</th><th>Action</th></tr>${cmosIssues.map(it=>`<tr><td>${it.host}</td><td style="color:red; font-weight:bold;">${it.voltage}V</td><td>Raise Ticket</td></tr>`).join('')}</table><br>` : '<p style="color:green;">No CMOS voltage issues</p>';
   const htmlContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Audit Report - ${auditFileName}</title><style>body{font-family:Segoe UI;padding:20px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #e2e8f0;padding:6px 8px;font-size:12px} th{background:#0f172a;color:white}</style></head><body><h2>Audit Report - ${auditFileName}</h2><p>Rows:${auditRawData.length} Cols:${auditHeaders.length} Date:${new Date().toLocaleString()}</p>${cmosSection}${statsHtml}</body></html>`;
   const blob = new Blob([htmlContent], {type:'text/html'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=`Audit_Report_${auditFileName.replace(/\.[^/.]+$/, '')}.html`; a.click(); URL.revokeObjectURL(url);
 }

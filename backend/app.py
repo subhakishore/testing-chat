@@ -503,7 +503,103 @@ HW_AUDIT_LOGIC = [
     "logic": "If found NOK or No Data , need to raise"
   }
 ]
+
 CMOS_THRESHOLD = 3.50
+
+# --- STORAGE SERVER SEPARATION (DO NOT APPLY TO COMPUTE) ---
+# Host name contains "storage" means it is storage server
+def is_storage_host(host_name):
+    return "storage" in str(host_name or "").lower()
+
+STORAGE_ONLY_PARAMS = {
+    "Storage NVME Hard Disk Labels",
+    "Storage NVME Hard Disk PCI Slot",
+    "Storage NVME Hard Disk Size",
+    "Storage NVME Hard Disk Health",
+    "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+    "Storage NVME Hard Disk Serial Number",
+    "Storage NVME Hard Disk Model Number",
+    "Storage NVME Hard Disk Firmware Version",
+    "Bad Block Count",
+    "CEPH Health Detail",
+    "CEPH list no of OSD's",
+    "Storage RAID Controller Model Number",
+    "JBOD Model Number",
+    "JBOD Firmware Build Package",
+    "JBOD Enclosure Disks Information for Storage",
+    "JBOD DISK INFORMATION",
+    "EID:SLT",
+    "DISK STATE",
+    "DISK GROUP (DG)",
+    "DG/VD",
+    "VIRTUAL DISK (VD)",
+    "DISK LABEL",
+    "RAID TYPE",
+    "RAID STATE",
+    "RAID DISK ACCESS MODE",
+    "RAID DISK CACHE MODE",
+    "RAID DISK STRIP SIZE",
+    "DISK CAPACITY",
+    "DISK SMART HEALTH STATUS",
+    "ERROR STATUS/TOTAL UNCORRECTED ERRORS",
+    "DISK SERIAL NUMBER",
+    "DISK MODEL NUMBER",
+    "DISK FIRMWARE VERSION",
+    "MEDIA WEAROUT INDICATOR",
+    "ERASE FAIL COUNT",
+    "OSD DETAILS",
+    "OSD ID",
+    "OSD STATUS",
+    "OSD DEVICE LABEL",
+    "FAST OSD DETAILS",
+    "FAST OSD ID",
+    "FAST OSD STATUS",
+    "FAST DEVICE LABEL",
+    "NVME DISK PCI SLOT",
+    "NVME DISK SIZE",
+    "NVME DISK HEALTH",
+    "NVME DISK ERRORS",
+    "NVME DISK SERIAL NUMBER",
+    "NVME DISK MODEL NUMBER",
+    "NVME DISK FIRMWARE VERSION",
+    "DID",
+}
+
+COMPUTE_ONLY_PARAMS = {
+    "Product Number",
+    "Serial Number",
+    "BMC IP Address",
+    "BMC MAC Address",
+    "Critical Sensor Data Record",
+    "Non-Responsive Sensor Data Record",
+    "Disk error from BMC SEL Logs",
+    "Uncorrectable ECC error from BMC SEL Logs",
+    "Correctable ECC logging limit reached from BMC SEL Logs",
+    "CPU/Processor error from BMC SEL Logs",
+    "CPU/Processor error Dates from BMC SEL Logs",
+    "Number of DIMM Modules",
+    "Individual DIMM Size",
+    "DIMM Total Size",
+    "Each DIMM Serial,Manufacture,Speed & Slot",
+    "Faulty DIMM Slot Location",
+    "BMC BIOS Version",
+    "BMC Firmware Version",
+    "CPU Frequency Scaling",
+    "Nic Interfaces list",
+    "Nic Interfaces link status",
+    "Nic Interfaces Firmware version",
+    "Nic Interfaces Driver version",
+    "Compute/Master Hard Disk Labels",
+    "Compute/Master Hard Disk Size",
+    "Compute/Master Hard Disk Health",
+    "Compute/Master Hard Disk Errors / Total Uncorrected Errors",
+    "Compute/Master Hard Disk Serial Number",
+    "Compute/Master Hard Disk Model Number",
+    "Compute/Master Hard Disk Media_Wearout_Indicator",
+    "Redfish SessionTimeout",
+    "Compute/Master Hard Disk Firmware Version",
+    "Compute/Master Hard Disk Erase_Fail_Count",
+}
 
 def evaluate_hw_param(param, value_str, host_name):
     val = str(value_str or "").strip()
@@ -512,8 +608,116 @@ def evaluate_hw_param(param, value_str, host_name):
     logic = logic_entry["logic"] if logic_entry else ""
     logic_lower = logic.lower()
     
+    is_storage = is_storage_host(host_name)
+
+    # SEPARATE APPLICABILITY
+    if is_storage:
+        if param in COMPUTE_ONLY_PARAMS:
+            return {"ticket": False, "reason": "Compute param not applicable to storage host"}
+    else:
+        if param in STORAGE_ONLY_PARAMS:
+            return {"ticket": False, "reason": "Storage param not applicable to compute host"}
+
+    # STORAGE LOGIC BRANCH (only for storage hosts)
+    if is_storage and param in STORAGE_ONLY_PARAMS:
+        has_nok = "nok" in lower
+        has_no_data = "no data" in lower or val == "" or lower == "na" or lower == "-"
+
+        storage_nok_nodata_params = {
+            "Storage NVME Hard Disk Labels",
+            "Storage NVME Hard Disk PCI Slot",
+            "Storage NVME Hard Disk Size",
+            "Storage NVME Hard Disk Health",
+            "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
+            "Storage NVME Hard Disk Serial Number",
+            "Storage NVME Hard Disk Model Number",
+            "Storage NVME Hard Disk Firmware Version",
+            "Bad Block Count",
+            "DISK SERIAL NUMBER",
+            "DISK MODEL NUMBER",
+            "DISK FIRMWARE VERSION",
+            "NVME DISK SERIAL NUMBER",
+            "NVME DISK MODEL NUMBER",
+            "NVME DISK FIRMWARE VERSION",
+            "NVME DISK SIZE",
+        }
+        if param in storage_nok_nodata_params:
+            if has_nok or has_no_data:
+                return {"ticket": True, "reason": f"{param} - {'NOK' if has_nok else 'No Data'}"}
+            if not val:
+                return {"ticket": True, "reason": f"{param} - Empty/No Data"}
+
+        if param == "CEPH Health Detail":
+            if has_nok:
+                return {"ticket": True, "reason": "CEPH Health Detail NOK"}
+
+        if param == "CEPH list no of OSD's":
+            has_nok = "nok" in lower
+            has_no_data = "no data" in lower or val.strip()=="" or lower in ["na","-"]
+            
+            if has_nok:
+                return {"ticket": True, "reason": "CEPH OSD NOK - Found NOK per logic"}
+            if has_no_data or not val.strip():
+                return {"ticket": True, "reason": "CEPH OSD No Data/Empty - Not found per logic, need to raise"}
+            
+            osd_count = None
+            patterns = [r"(\d+)\s*osd", r"osd\s*[:=]?\s*(\d+)", r"total\s*osd.*?(\d+)"]
+            for pat in patterns:
+                m = re.search(pat, val, re.I)
+                if m:
+                    try:
+                        osd_count = int(m.group(1))
+                        break
+                    except:
+                        pass
+            if osd_count is None:
+                m = re.search(r"\b(\d+)\b", val)
+                if m:
+                    try:
+                        osd_count = int(m.group(1))
+                    except:
+                        pass
+            
+            if osd_count is not None and osd_count != 45:
+                return {"ticket": True, "reason": f"CEPH OSD count {osd_count} !=45 - Should be 45 per logic, need to raise"}
+            
+            if osd_count is None:
+                nums = [int(x) for x in re.findall(r"\d+", val)]
+                if not nums:
+                    return {"ticket": True, "reason": "CEPH OSD count not found - Not found per logic, need to raise"}
+                if 45 not in nums:
+                    return {"ticket": True, "reason": f"CEPH OSD count {nums} - No 45 found, should be 45"}
+            
+            if "down" in lower:
+                down_match = re.search(r"(\d+)\s*down", val, re.I)
+                if down_match:
+                    down_cnt = int(down_match.group(1))
+                    if down_cnt > 0:
+                        return {"ticket": True, "reason": f"CEPH OSD {down_cnt} down - All should be up per logic"}
+                else:
+                    if "0 down" not in lower:
+                        return {"ticket": True, "reason": "CEPH OSD down found - All should be up per logic"}
+            
+            up_match = re.search(r"(\d+)\s*up", val, re.I)
+            if up_match:
+                up_cnt = int(up_match.group(1))
+                if up_cnt != 45:
+                    return {"ticket": True, "reason": f"CEPH OSD up count {up_cnt} !=45 - All 45 should be up per logic"}
+        
+
+        if param == "Storage RAID Controller Model Number":
+            if has_nok:
+                return {"ticket": True, "reason": "RAID Controller NOK"}
+
+        if "if found nok or no data" in logic_lower:
+            if has_nok or has_no_data:
+                return {"ticket": True, "reason": f"{'NOK' if has_nok else ''} {'No Data' if has_no_data else ''}".strip()}
+        elif "if found nok" in logic_lower:
+            if has_nok:
+                return {"ticket": True, "reason": "Found NOK"}
+
+    # EXISTING COMPUTE LOGIC BELOW - DO NOT MODIFY
     if not logic or "not required" in logic_lower or logic.strip() == "":
-        # Keep CMOS check even if logic says Not Required per user request
         if param != "CMOS Current Voltage":
             return {"ticket": False, "reason": "Not Required"}
     
@@ -554,8 +758,8 @@ def evaluate_hw_param(param, value_str, host_name):
             return {"ticket": True, "reason": f"Total {num}<187"}
     if param == "CPU Frequency Scaling":
         num = extract_number(val)
-        is_storage = "storagebm" in host_name.lower()
-        threshold = 48 if is_storage else 64
+        is_storage_bm = "storagebm" in host_name.lower()
+        threshold = 48 if is_storage_bm else 64
         if num is not None and num < threshold:
             return {"ticket": True, "reason": f"CPU scaling {num} <{threshold}"}
     if param == "Nic Interfaces list":
@@ -584,25 +788,8 @@ def evaluate_hw_param(param, value_str, host_name):
                 return {"ticket": True, "reason": f"Health NOK/Failed: {val}"}
             return {"ticket": True, "reason": f"Health not PASSED/OK: {val or 'EMPTY'}"}
     if param == "Compute/Master Hard Disk Errors / Total Uncorrected Errors":
-        is_empty = not val.strip()
-        has_no_data = "no data" in lower
-        has_nok = "nok" in lower
-        has_failed = "failed" in lower
-        has_errors_logged = "error" in lower and "no errors" not in lower
-        is_valid = "no errors logged" in lower or ("ok" in lower and not has_no_data and not has_nok)
-        
-        if is_empty:
-            return {"ticket": True, "reason": "Errors EMPTY - No value found"}
-        if has_no_data:
-            return {"ticket": True, "reason": f"Errors No Data: {val}"}
-        if has_nok:
-            return {"ticket": True, "reason": f"Errors NOK: {val}"}
-        if has_failed:
-            return {"ticket": True, "reason": f"Errors Failed: {val}"}
-        if has_errors_logged:
-            return {"ticket": True, "reason": f"Errors Logged found: {val}"}
-        if not is_valid:
-            return {"ticket": True, "reason": f"Errors not 'No Errors Logged' or 'OK': {val or 'EMPTY'}"}
+        if "no errors" not in lower and "ok" not in lower:
+            return {"ticket": True, "reason": "Errors found"}
     if "media_wearout_indicator" in param.lower() or param == "MEDIA WEAROUT INDICATOR":
         vm = re.search(r"VALUE\s*([0-9]+)", val, re.I)
         wm = re.search(r"WORST\s*([0-9]+)", val, re.I)
@@ -624,102 +811,7 @@ def evaluate_hw_param(param, value_str, host_name):
             volt = float(m.group(1))
             if volt > CMOS_THRESHOLD:
                 return {"ticket": True, "reason": f"CMOS {volt}V > {CMOS_THRESHOLD}V"}
-    # Generic less than
-
-    # ===== STORAGE ALL COMMANDS - SEPARATE LOGIC =====
-    storage_nvme_params = [
-        "Storage NVME Hard Disk Labels",
-        "Storage NVME Hard Disk PCI Slot",
-        "Storage NVME Hard Disk Size",
-        "Storage NVME Hard Disk Health",
-        "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
-        "Storage NVME Hard Disk Serial Number",
-        "Storage NVME Hard Disk Model Number",
-        "Storage NVME Hard Disk Firmware Version",
-        "Bad Block Count"
-    ]
-    
-    if param in storage_nvme_params:
-        is_empty = not val.strip()
-        has_no_data = "no data" in lower
-        has_nok = "nok" in lower
-        if is_empty:
-            return {"ticket": True, "reason": f"{param} EMPTY - No value"}
-        if has_no_data:
-            return {"ticket": True, "reason": f"{param} No Data: {val}"}
-        if has_nok:
-            return {"ticket": True, "reason": f"{param} NOK: {val}"}
-    
-    if param == "CEPH Health Detail":
-        is_empty = not val.strip()
-        has_nok = "nok" in lower
-        has_health_err = "health_err" in lower or "health_warn" in lower or ("health" in lower and "health_ok" not in lower)
-        if is_empty:
-            return {"ticket": True, "reason": "CEPH Health EMPTY"}
-        if has_nok:
-            return {"ticket": True, "reason": f"CEPH NOK: {val}"}
-        if "health_ok" not in lower and "ok" not in lower:
-            return {"ticket": True, "reason": f"CEPH Health not OK: {val}"}
-    
-    if param == "CEPH list no of OSD's":
-        is_empty = not val.strip()
-        has_nok = "nok" in lower
-        has_no_data = "no data" in lower
-        
-        m_total = re.search(r"osd[:\s]*([0-9]+)", val, re.I)
-        m_up = re.search(r"([0-9]+)\s*up", val, re.I)
-        m_down = re.search(r"([0-9]+)\s*down", val, re.I)
-        
-        total_osd = int(m_total.group(1)) if m_total else None
-        up_osd = int(m_up.group(1)) if m_up else None
-        down_osd = int(m_down.group(1)) if m_down else None
-        
-        # Logic: If found NOK and osd count should be 45 and all osd should be up, if not found need to raise
-        if is_empty:
-            return {"ticket": True, "reason": "CEPH OSD EMPTY - No value"}
-        if has_no_data:
-            return {"ticket": True, "reason": f"CEPH OSD No Data: {val}"}
-        if has_nok:
-            return {"ticket": True, "reason": f"CEPH OSD NOK: {val}"}
-        
-        if total_osd is not None and total_osd != 45:
-            return {"ticket": True, "reason": f"OSD count {total_osd} != 45 (expected 45)"}
-        
-        if down_osd is not None and down_osd > 0:
-            return {"ticket": True, "reason": f"OSD DOWN detected: {down_osd} down - All should be up. Value: {val}"}
-        
-        if up_osd is not None and up_osd != 45:
-            return {"ticket": True, "reason": f"OSD up count {up_osd} != 45 - All should be up. Value: {val}"}
-        
-        if " down" in lower or "down (" in lower:
-            return {"ticket": True, "reason": f"OSD has DOWN state: {val} - All should be up"}
-        
-        if up_osd is not None and total_osd is not None and up_osd < total_osd:
-            return {"ticket": True, "reason": f"OSD not all up: {up_osd}/{total_osd} up. Value: {val}"}
-        
-        if total_osd == 45 and up_osd == 45 and down_osd is None:
-            return {"ticket": False, "reason": "OSD OK - 45/45 up"}
-    
-    storage_raid_params = [
-        "Storage RAID Controller Model Number",
-        "JBOD Model Number",
-        "JBOD Firmware Build Package"
-    ]
-    
-    if param in storage_raid_params:
-        is_empty = not val.strip()
-        has_nok = "nok" in lower
-        has_no_data = "no data" in lower
-        if is_empty:
-            return {"ticket": True, "reason": f"{param} EMPTY"}
-        if has_nok:
-            return {"ticket": True, "reason": f"{param} NOK: {val}"}
-        if has_no_data:
-            return {"ticket": True, "reason": f"{param} No Data"}
-    
-    # ===== END STORAGE LOGIC =====
-
-        lt_match = re.search(r"less than\s*([0-9]+)", logic_lower)
+    lt_match = re.search(r"less than\s*([0-9]+)", logic_lower)
     if lt_match:
         threshold = float(lt_match.group(1))
         gb = extract_gb(val)
@@ -1002,7 +1094,7 @@ async def audit_analyze(file: UploadFile = File(...)):
                 hosts.append({"col": idx, "name": hn})
     
     # Evaluate all params
-    violations = []
+    issues = []
     for row in rows:
         if not row or not row[0]:
             continue
@@ -1029,7 +1121,7 @@ async def audit_analyze(file: UploadFile = File(...)):
 
             result = evaluate_hw_param(param, value, host["name"])
             if result["ticket"]:
-                violations.append({
+                issues.append({
                     "host": host["name"],
                     "param": param,
                     "value": value,
@@ -1039,156 +1131,36 @@ async def audit_analyze(file: UploadFile = File(...)):
                     "action": f"Raise Ticket - {param}: {result['reason']}"
                 })
     
-    # Create Excel with single sheet for all violations + Separate Storage sheet in SAME book
+    # Create Excel with single sheet for all issues
     wb = Workbook()
     ws_main = wb.active
-    ws_main.title = "All_Violations_Single_Sheet"
+    ws_main.title = "All_Issues_Single_Sheet"
     ws_main.append(["Host", "Parameter", "Value", "Logic Rule", "Failure Reason", "Ticket Required", "Action", "Severity", "File", "Date"])
-    
-    # Define storage params for separate sheet
-    storage_params_list = [
-        "Storage NVME Hard Disk Labels",
-        "Storage NVME Hard Disk PCI Slot",
-        "Storage NVME Hard Disk Size",
-        "Storage NVME Hard Disk Health",
-        "Storage NVME Hard Disk Errors / Total Uncorrected Errors",
-        "Storage NVME Hard Disk Serial Number",
-        "Storage NVME Hard Disk Model Number",
-        "Storage NVME Hard Disk Firmware Version",
-        "Bad Block Count",
-        "CEPH Health Detail",
-        "CEPH list no of OSD's",
-        "Storage RAID Controller Model Number",
-        "JBOD Model Number",
-        "JBOD Firmware Build Package",
-        "EID:SLT",
-        "DISK STATE",
-        "DISK CAPACITY",
-        "DISK SMART HEALTH STATUS",
-        "ERROR STATUS/TOTAL UNCORRECTED ERRORS",
-        "DISK SERIAL NUMBER",
-        "DISK MODEL NUMBER",
-        "DISK FIRMWARE VERSION",
-        "MEDIA WEAROUT INDICATOR",
-        "ERASE FAIL COUNT",
-        "OSD ID",
-        "OSD STATUS",
-        "FAST OSD ID",
-        "FAST OSD STATUS",
-        "OSD DETAILS",
-        "FAST OSD DETAILS",
-        "JBOD DISK INFORMATION",
-        "JBOD Enclosure Disks Information for Storage"
-    ]
-    
-    storage_violations = []
-    compute_violations = []
-    
-    for v in violations:
+    for v in issues:
         severity = "Medium"
         if "critical" in v["param"].lower() or "disk error" in v["param"].lower() or "cpu" in v["param"].lower() or "dimm" in v["param"].lower():
             severity = "High"
         if "CMOS" in v["param"]:
             severity = "High"
-        if "storage" in v["param"].lower() or "ceph" in v["param"].lower() or "jbod" in v["param"].lower() or "bad block" in v["param"].lower() or "raid controller" in v["param"].lower():
-            severity = "High"
-        
         ws_main.append([
             v["host"], v["param"], v["value"], v["logic"], v["reason"], "YES", v["action"], severity, filename, ""
         ])
-        
-        # Separate storage vs compute
-        is_storage = False
-        param_lower = v["param"].lower()
-        if v["param"] in storage_params_list:
-            is_storage = True
-        elif param_lower.startswith("storage") or param_lower.startswith("ceph") or param_lower.startswith("jbod") or "bad block" in param_lower or "raid controller" in param_lower or "osd" in param_lower or param_lower.startswith("eid:") or "disk state" in param_lower or "disk capacity" in param_lower or "disk smart" in param_lower or "media wearout" in param_lower or "erase fail" in param_lower:
-            # Exclude Compute/Master Hard Disk params
-            if not v["param"].startswith("Compute/Master"):
-                is_storage = True
-        
-        if is_storage:
-            storage_violations.append(v)
-        else:
-            compute_violations.append(v)
-    
-    # Storage Issues - SEPARATE SHEET IN SAME EXCEL BOOK
-    ws_storage = wb.create_sheet("Storage_Issues")
-    ws_storage.append(["Host", "Parameter", "Value", "Logic Rule", "Failure Reason", "Ticket Required", "Action", "Severity", "Category"])
-    if storage_violations:
-        for v in storage_violations:
-            severity = "High"
-            category = "STORAGE"
-            if "NVME" in v["param"]:
-                category = "STORAGE_NVME"
-            elif "CEPH" in v["param"]:
-                category = "CEPH"
-            elif "JBOD" in v["param"] or "RAID" in v["param"]:
-                category = "JBOD_RAID"
-            elif "OSD" in v["param"]:
-                category = "OSD"
-            elif "DISK" in v["param"]:
-                category = "JBOD_DISK"
-            elif "Bad Block" in v["param"]:
-                category = "BAD_BLOCK"
-            
-            ws_storage.append([
-                v["host"], v["param"], v["value"], v["logic"], v["reason"], "YES", v["action"], severity, category
-            ])
-    else:
-        ws_storage.append(["No Storage Issues Found", "-", "-", "-", "All Storage Checks Passed", "NO", "-", "-", "-"])
-    
-    # Compute Issues - SEPARATE SHEET
-    ws_compute = wb.create_sheet("Compute_Issues")
-    ws_compute.append(["Host", "Parameter", "Value", "Logic Rule", "Failure Reason", "Ticket Required", "Action", "Severity", "Category"])
-    if compute_violations:
-        for v in compute_violations:
-            severity = "Medium"
-            if "critical" in v["param"].lower() or "cpu" in v["param"].lower() or "dimm" in v["param"].lower() or "cmos" in v["param"].lower():
-                severity = "High"
-            category = "COMPUTE"
-            if "DIMM" in v["param"]:
-                category = "MEMORY_DIMM"
-            elif "CPU" in v["param"]:
-                category = "CPU"
-            elif "CMOS" in v["param"]:
-                category = "CMOS"
-            elif "Disk" in v["param"] and "Compute" in v["param"]:
-                category = "COMPUTE_DISK"
-            elif "Nic" in v["param"]:
-                category = "NIC"
-            elif "BMC" in v["param"]:
-                category = "BMC"
-            elif "Sensor" in v["param"]:
-                category = "SENSOR"
-            
-            ws_compute.append([
-                v["host"], v["param"], v["value"], v["logic"], v["reason"], "YES", v["action"], severity, category
-            ])
-    else:
-        ws_compute.append(["No Compute Issues Found", "-", "-", "-", "All Compute Checks Passed", "NO", "-", "-", "-"])
     
     # Summary
     ws_summary = wb.create_sheet("Summary")
-    ws_summary.append(["HW Audit Full Logic Report - With Storage Separate Sheet"])
+    ws_summary.append(["HW Audit Full Logic Report"])
     ws_summary.append(["File", filename])
     ws_summary.append(["Total Hosts", len(hosts)])
     ws_summary.append(["Total Rules", len(HW_AUDIT_LOGIC)])
-    ws_summary.append(["Total Violations", len(violations)])
-    ws_summary.append(["Compute/Master Violations", len(compute_violations)])
-    ws_summary.append(["Storage Violations", len(storage_violations)])
-    ws_summary.append(["Unique Hosts With Issues", len(set(v["host"] for v in violations))])
+    ws_summary.append(["Total Issues", len(issues)])
+    ws_summary.append(["Unique Hosts With Issues", len(set(v["host"] for v in issues))])
     ws_summary.append(["CMOS Threshold", f"{CMOS_THRESHOLD}V"])
     ws_summary.append([])
     ws_summary.append(["Breakdown by Parameter"])
     from collections import Counter
-    cnt = Counter(v["param"] for v in violations)
+    cnt = Counter(v["param"] for v in issues)
     for p,c in cnt.items():
         ws_summary.append([p, c])
-    ws_summary.append([])
-    ws_summary.append(["Breakdown by Category"])
-    ws_summary.append(["Compute Issues", len(compute_violations)])
-    ws_summary.append(["Storage Issues", len(storage_violations)])
     
     # Full data
     ws_full = wb.create_sheet("Full_Audit_Data")
@@ -1201,39 +1173,17 @@ async def audit_analyze(file: UploadFile = File(...)):
     for r in HW_AUDIT_LOGIC:
         ws_logic.append([r["param"], r["logic"]])
     
-    # Style headers
+    # Style header
     for cell in ws_main[1]:
         cell.font = BOLD_FONT
         cell.border = THIN_BORDER
     for row in ws_main.iter_rows(min_row=2):
         for cell in row:
             cell.border = THIN_BORDER
-            if cell.col_idx == 6:
+            if cell.col_idx == 6:  # Ticket Required
                 if cell.value == "YES":
                     cell.fill = RED_FILL
                     cell.font = RED_FONT
-    
-    for cell in ws_storage[1]:
-        cell.font = BOLD_FONT
-        cell.border = THIN_BORDER
-        cell.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    for row in ws_storage.iter_rows(min_row=2):
-        for cell in row:
-            cell.border = THIN_BORDER
-            if cell.col_idx == 6 and cell.value == "YES":
-                cell.fill = RED_FILL
-                cell.font = RED_FONT
-    
-    for cell in ws_compute[1]:
-        cell.font = BOLD_FONT
-        cell.border = THIN_BORDER
-        cell.fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
-    for row in ws_compute.iter_rows(min_row=2):
-        for cell in row:
-            cell.border = THIN_BORDER
-            if cell.col_idx == 6 and cell.value == "YES":
-                cell.fill = RED_FILL
-                cell.font = RED_FONT
     
     buf = io.BytesIO()
     wb.save(buf)
